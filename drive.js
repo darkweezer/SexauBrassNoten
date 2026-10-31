@@ -7,6 +7,8 @@
 //
 // Es gibt keinen eigenen Server. Wer die Drive-Ordner sehen darf, sieht die Noten.
 
+import { findInstruments, SONSTIGE } from "./instruments.js";
+
 const SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 const API = "https://www.googleapis.com/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
@@ -150,13 +152,13 @@ export async function loadSongsFromDrive(rootFolders) {
   );
 
   // 2. PDFs in den Stück-Ordnern (in Gruppen, damit die Anfrage nicht zu lang wird)
-  const pdfs = [];
-  for (const group of chunk(folders.map((f) => f.id), 40)) {
-    pdfs.push(...await listAll(
-      `${inParents(group)} and mimeType = 'application/pdf' and trashed = false`,
-      "id, name, parents, size, modifiedTime",
-    ));
-  }
+  //    (über 8.000 PDFs: Gruppen laufen gleichzeitig, das spart Wartezeit)
+  const groups = chunk(folders.map((f) => f.id), 40);
+  const results = await Promise.all(groups.map((group) => listAll(
+    `${inParents(group)} and mimeType = 'application/pdf' and trashed = false`,
+    "id, name, parents, size",
+  )));
+  const pdfs = results.flat();
 
   return buildSongs(folders, pdfs);
 }
@@ -168,9 +170,10 @@ export async function downloadPdf(fileId) {
 }
 
 // ---------- Namen auswerten ----------
-// Ordner:  "255_Nessaja"                    -> Nr. 255, Titel "Nessaja"
-// Datei:   "Nessaja_Altsax_1.pdf"           -> Stimme "Altsax 1", Instrument "Altsax"
+// Ordner:  "255_Nessaja"                     -> Nr. 255, Titel "Nessaja"
+// Datei:   "Nessaja_Altsax_1.pdf"            -> Stimme "Altsax 1", Instrument "Altsaxophon"
 // Datei:   "273_Kings_of_Swing_Horn_1_F.pdf" -> Stimme "Horn 1 F", Instrument "Horn"
+// Die Zuordnung der Instrumente steht in instruments.js.
 
 export function parseFolderName(name) {
   const m = String(name).trim().match(/^(\d+)[_\s-]+(.*)$/);
@@ -184,22 +187,37 @@ const norm = (s) => s.toLowerCase()
   .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
   .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
+// "AltSax1" -> "AltSax 1", "Seite2" -> "Seite 2"
+const spaceDigits = (s) => s.replace(/([A-Za-zäöüÄÖÜß])(\d)/g, "$1 $2");
+
+const PITCH = /^(b|c|es|f|in)$/i;
+
 export function parseFileName(fileName, songTitle) {
   const base = String(fileName).replace(/\.pdf$/i, "");
-  let tokens = base.split(/[_\s]+/).filter(Boolean);
+  let tokens = base.split(/[_\s-]+/).filter(Boolean);
 
   // führende Stücknummer entfernen ("273_…")
   if (tokens.length > 1 && /^\d+$/.test(tokens[0])) tokens = tokens.slice(1);
 
   // Titelwörter am Anfang entfernen, wenn sie zum Ordnernamen passen
-  const titleTokens = String(songTitle).split(/[_\s]+/).filter(Boolean).map(norm);
+  const titleTokens = String(songTitle).split(/[_\s-]+/).filter(Boolean).map(norm);
   let i = 0;
   while (i < titleTokens.length && i < tokens.length - 1 && norm(tokens[i]) === titleTokens[i]) i++;
-  const voiceTokens = i > 0 ? tokens.slice(i) : tokens;
+  let voiceTokens = tokens.slice(i);
 
-  const voice = voiceTokens.join(" ") || base;
-  const instrument = (voiceTokens[0] ?? base).replace(/\d+$/, "") || voiceTokens[0] || base;
-  return { voice, instrument };
+  const found = findInstruments(voiceTokens);
+
+  // Passte der Titel nicht zum Ordnernamen (z. B. "Phantom_AltSax1" im Ordner "The Phantom of the opera"),
+  // beginnt die Stimmenbezeichnung beim ersten Instrument. Eine Tonart davor ("Es_Horn") bleibt dabei.
+  if (found && i === 0 && found.index > 0) {
+    let from = found.index;
+    if (PITCH.test(tokens[from - 1])) from--;
+    voiceTokens = tokens.slice(from);
+  }
+
+  const voice = spaceDigits(voiceTokens.join(" ")) || base;
+  const instruments = found?.instruments ?? [SONSTIGE];
+  return { voice, instrument: instruments[0], instruments };
 }
 
 export function buildSongs(folders, pdfs) {

@@ -7,16 +7,17 @@ import {
   initAuth, signIn, signOut, isSignedIn, wasSignedInBefore,
   loadSongsFromDrive, downloadPdf, NotLoggedInError,
 } from "./drive.js";
+import { INSTRUMENT_ORDER } from "./instruments.js";
 
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
 const MAX_OFFLINE_FILES = 150;  // Obergrenze, damit der Gerätespeicher nicht überläuft
-const LS_SONGS = "notenarchiv.stueckliste";
+const LS_SONGS = "notenarchiv.stueckliste.v2"; // v2: Instrumente zusammengefasst
 const LS_INSTRUMENT = "notenarchiv.instrument";
 
 const state = {
-  songs: [],          // [{ id, number, title, files: [{ id, name, voice, instrument, size }] }]
+  songs: [],          // [{ id, number, title, files: [{ id, name, voice, instrument, instruments, size }] }]
   offline: new Map(), // fileId -> Eintrag aus IndexedDB (ohne Blob)
   loading: false,
 };
@@ -43,6 +44,10 @@ function escapeHtml(text) {
   return String(text ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+// Eine Stimme kann für mehrere Instrumente gelten ("Oboe_Glockenspiel")
+const fileInstruments = (f) => f.instruments ?? [f.instrument];
+const fileHas = (f, instrument) => fileInstruments(f).includes(instrument);
 
 function lsGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
 function lsSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
@@ -121,11 +126,13 @@ async function refreshSongs() {
   if (state.loading) return;
   state.loading = true;
   $("#result-count").textContent = "Noten werden aus Google Drive geladen …";
+  $("#result-count").classList.add("loading");
   try {
     state.songs = await loadSongsFromDrive(CONFIG.NOTEN_ORDNER);
     lsSet(LS_SONGS, JSON.stringify({ loadedAt: Date.now(), songs: state.songs }));
   } finally {
     state.loading = false;
+    $("#result-count").classList.remove("loading");
   }
   populateInstrumentFilter();
   renderSongs();
@@ -173,11 +180,12 @@ function showView(name) {
 
 function populateInstrumentFilter() {
   const instruments = new Set();
-  state.songs.forEach((s) => s.files.forEach((f) => instruments.add(f.instrument)));
+  state.songs.forEach((s) => s.files.forEach((f) => fileInstruments(f).forEach((i) => instruments.add(i))));
   const select = $("#voice-filter");
   const current = select.value || lsGet(LS_INSTRUMENT) || "";
   select.innerHTML = `<option value="">Alle Instrumente</option>`;
-  [...instruments].sort((a, b) => a.localeCompare(b, "de")).forEach((v) => {
+  const rank = (name) => { const i = INSTRUMENT_ORDER.indexOf(name); return i < 0 ? 999 : i; };
+  [...instruments].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, "de")).forEach((v) => {
     const opt = document.createElement("option");
     opt.value = v;
     opt.textContent = v;
@@ -203,7 +211,7 @@ function renderSongs() {
 
   const visible = state.songs
     .filter((s) => matchesSearch(s, query))
-    .filter((s) => !instrument || s.files.some((f) => f.instrument === instrument))
+    .filter((s) => !instrument || s.files.some((f) => fileHas(f, instrument)))
     .sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"));
 
   if (!state.loading) {
@@ -213,7 +221,7 @@ function renderSongs() {
   }
 
   $("#song-list").innerHTML = visible.map((song) => {
-    const mine = instrument ? song.files.filter((f) => f.instrument === instrument) : [];
+    const mine = instrument ? song.files.filter((f) => fileHas(f, instrument)) : [];
     const number = song.number != null ? `<span class="song-number">${song.number}</span> ` : "";
     return `
       <li class="song">
@@ -337,7 +345,7 @@ function bindEvents() {
       const song = state.songs.find((s) => s.id === saveBtn.dataset.saveSong);
       const instrument = $("#voice-filter").value;
       if (song) {
-        const files = song.files.filter((f) => !instrument || f.instrument === instrument);
+        const files = song.files.filter((f) => !instrument || fileHas(f, instrument));
         return saveFiles(files.map((f) => ({ id: f.id, songId: song.id, voice: f.voice, title: song.title })), saveBtn);
       }
     }

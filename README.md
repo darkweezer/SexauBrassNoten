@@ -33,12 +33,13 @@ notenapp/
 ├── styles.css             Gestaltung
 ├── app.js                 Logik: Suche, Filter, Offline-Speicher
 ├── drive.js               Google-Anmeldung, Drive auslesen, PDFs laden
+├── instruments.js         Zuordnung der Instrument-Schreibweisen (z. B. Trp → Trompete)
 ├── config.js              Einstellungen: Client-ID und die zwei Noten-Ordner
 ├── sw.js                  Service Worker für Offline-Betrieb
 ├── manifest.webmanifest   Installationsdaten der PWA
 ├── docs/
 │   └── google-einrichtung.md  Klick-Anleitung für die Google-Anmeldung
-└── icons/                 App-Symbole (192 und 512 px, PNG)
+└── icons/                 Logo und App-Symbole (aus dem Sexau-Brass-Logo erzeugt)
 ```
 
 ## Stand des Projekts
@@ -47,12 +48,13 @@ notenapp/
 - [x] Offline-Speicher in IndexedDB (Speichern, Öffnen, Löschen, Speicherverbrauch)
 - [x] Service Worker für Offline-Start
 - [x] Installierbar (Manifest)
-- [ ] App-Symbole als PNG (Platzhalter in `icons/`)
+- [x] App-Symbole aus dem Sexau-Brass-Logo
 - [x] Google-Login (Zugang über Testnutzer-Liste und Drive-Freigabe)
 - [x] Anbindung an die Google Drive API (beide Ordner, Stückliste automatisch)
 - [x] Filter nach Instrument, „Meine Stimmen offline speichern“
 - [x] Google-Cloud-Projekt „SBNotenarchiv“ angelegt, Client-ID in `config.js` eingetragen
-- [ ] Instrumentnamen vereinheitlichen (z. B. „Trp“ und „Trompete“)
+- [x] Instrumentnamen vereinheitlicht (255 Schreibweisen → 30 Instrumente, Liste in `instruments.js`)
+- [x] Logo und dunkles Design (Schwarz/Gold)
 - [ ] Datenbank / Admin-Bereich nur, falls später wirklich nötig
 - [ ] Anleitung „So installieren Sie die App“ mit Bildern
 - [ ] Hosting über GitHub Pages: https://darkweezer.github.io/SexauBrassNoten/ (Repository muss dafür öffentlich sein)
@@ -85,6 +87,13 @@ Jede Änderung auf `main` ist danach automatisch nach 1–2 Minuten online.
 In einem der beiden Drive-Ordner „Noten“ einen Ordner `Nummer_Titel` anlegen (z. B. `330_Neues_Stueck`)
 und die PDFs hineinlegen, am besten benannt als `Titel_Instrument_Stimme.pdf` (z. B. `Neues_Stueck_Trompete_1.pdf`).
 In der App erscheint das Stück nach dem nächsten Öffnen oder über Hilfe → „Notenliste neu laden“.
+
+## Instrumente
+
+Die Dateinamen in den Drives schreiben Instrumente sehr unterschiedlich (z. B. `Trp`, `Trompete`, `Trumpet`).
+`instruments.js` fasst sie zusammen. Taucht eine neue Schreibweise auf und landet unter „Sonstige“,
+einfach in `instruments.js` beim passenden Instrument ergänzen. Stimmen für mehrere Instrumente
+(z. B. `Oboe_Glockenspiel`) erscheinen bei beiden.
 
 ## Hinweise
 
