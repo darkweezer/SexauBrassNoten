@@ -38,6 +38,7 @@ Die App kann damit Dateien **nur ansehen und herunterladen**, aber nichts änder
 1. Links auf **Zielgruppe**. Der Status bleibt auf **Test** (nicht „Veröffentlichen“ klicken).
 2. Unter **Testnutzer** → **Nutzer hinzufügen** die Google-E-Mail-Adressen der Musiker eintragen
    (bis zu 100 Personen) → **Speichern**.
+   Adressen mit `@googlemail.com` immer als `@gmail.com` eintragen, sonst lehnt Google sie ab.
 
 Wichtig: Dieselben Personen müssen **beide Drive-Ordner „Noten“** sehen dürfen
 (in Google Drive: Ordner → Teilen → als „Betrachter“ hinzufügen).

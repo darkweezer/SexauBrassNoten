@@ -4,7 +4,7 @@
 export const CONFIG = {
   // OAuth-Client-ID aus der Google Cloud Console (siehe docs/google-einrichtung.md).
   // Endet auf ".apps.googleusercontent.com".
-  GOOGLE_CLIENT_ID: "HIER-CLIENT-ID-EINTRAGEN.apps.googleusercontent.com",
+  GOOGLE_CLIENT_ID: "460899870019-gu384qvscfu8hcv75rvmm4fn4pjccl0g.apps.googleusercontent.com",
 
   // Die beiden Drive-Ordner „Noten“. Jeder Unterordner ist ein Stück.
   NOTEN_ORDNER: [

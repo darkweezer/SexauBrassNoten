@@ -51,7 +51,7 @@ notenapp/
 - [x] Google-Login (Zugang über Testnutzer-Liste und Drive-Freigabe)
 - [x] Anbindung an die Google Drive API (beide Ordner, Stückliste automatisch)
 - [x] Filter nach Instrument, „Meine Stimmen offline speichern“
-- [ ] Google-Cloud-Projekt anlegen und Client-ID in `config.js` eintragen (siehe `docs/google-einrichtung.md`)
+- [x] Google-Cloud-Projekt „SBNotenarchiv“ angelegt, Client-ID in `config.js` eingetragen
 - [ ] Instrumentnamen vereinheitlichen (z. B. „Trp“ und „Trompete“)
 - [ ] Datenbank / Admin-Bereich nur, falls später wirklich nötig
 - [ ] Anleitung „So installieren Sie die App“ mit Bildern
