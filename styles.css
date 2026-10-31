@@ -66,11 +66,11 @@ main { max-width: 760px; margin: 0 auto; padding: 16px; }
 .view.is-active { display: block; }
 
 /* Suche und Filter */
-.toolbar { display: grid; gap: 12px; margin-bottom: 8px; }
+.toolbar { display: grid; gap: 12px; margin-bottom: 8px; align-items: end; }
 @media (min-width: 560px) { .toolbar { grid-template-columns: 1fr 220px; } }
 
 input[type="search"], select {
-  width: 100%; min-height: var(--tap);
+  width: 100%; height: var(--tap); min-height: var(--tap);
   padding: 10px 14px; font: inherit; color: var(--text);
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
 }
