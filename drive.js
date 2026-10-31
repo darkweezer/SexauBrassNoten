@@ -10,6 +10,9 @@
 import { findInstruments, SONSTIGE } from "./instruments.js";
 
 const SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+// Nur für Verwaltende: darf ausschließlich Dateien ändern, die diese App selbst angelegt hat
+const FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const API = "https://www.googleapis.com/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
@@ -17,6 +20,7 @@ let tokenClient = null;
 let accessToken = null;
 let tokenExpiresAt = 0;
 let pendingToken = null;
+let grantedScopes = "";
 
 // ---------- Anmeldung ----------
 
@@ -50,7 +54,7 @@ export function isSignedIn() {
  * aufgerufen werden, sonst blockiert der Browser das Google-Fenster.
  * interactive=false versucht es still (ohne Fenster), falls schon einmal zugestimmt wurde.
  */
-export function signIn({ interactive = true } = {}) {
+export function signIn({ interactive = true, withWrite = false } = {}) {
   if (!tokenClient) return Promise.reject(new Error("Anmeldung ist noch nicht bereit."));
   if (pendingToken) return pendingToken;
   pendingToken = new Promise((resolve, reject) => {
@@ -58,6 +62,7 @@ export function signIn({ interactive = true } = {}) {
       pendingToken = null;
       if (resp.error) return reject(new Error(loginErrorText(resp.error)));
       accessToken = resp.access_token;
+      grantedScopes = resp.scope ?? "";
       // eine Minute Puffer, damit das Token nicht mitten im Download abläuft
       tokenExpiresAt = Date.now() + (Number(resp.expires_in) - 60) * 1000;
       try { localStorage.setItem("notenarchiv.angemeldet", "1"); } catch {}
@@ -67,9 +72,15 @@ export function signIn({ interactive = true } = {}) {
       pendingToken = null;
       reject(new Error(err?.type === "popup_closed" ? "Anmeldung abgebrochen." : "Anmeldung nicht möglich."));
     };
-    tokenClient.requestAccessToken({ prompt: interactive ? "" : "none" });
+    const request = { prompt: interactive ? "" : "none" };
+    if (withWrite) request.scope = `${SCOPE} ${FILE_SCOPE}`;
+    tokenClient.requestAccessToken(request);
   });
   return pendingToken;
+}
+
+export function canWrite() {
+  return isSignedIn() && grantedScopes.includes(FILE_SCOPE);
 }
 
 export function signOut() {
@@ -96,12 +107,12 @@ export class NotLoggedInError extends Error {
   constructor() { super("Bitte neu anmelden."); this.name = "NotLoggedInError"; }
 }
 
-async function driveFetch(url) {
+async function driveFetch(url, options = {}) {
   if (!isSignedIn()) {
     // still erneuern versuchen; klappt meist, wenn die Person schon zugestimmt hat
     try { await signIn({ interactive: false }); } catch { throw new NotLoggedInError(); }
   }
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await fetch(url, { ...options, headers: { ...(options.headers ?? {}), Authorization: `Bearer ${accessToken}` } });
   if (res.status === 401) { accessToken = null; throw new NotLoggedInError(); }
   if (res.status === 403 || res.status === 404) {
     throw new Error("Kein Zugriff auf diese Noten. Bitte beim Notenwart freischalten lassen.");
@@ -167,6 +178,54 @@ export async function loadSongsFromDrive(rootFolders) {
 export async function downloadPdf(fileId) {
   const res = await driveFetch(`${API}/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`);
   return res.blob();
+}
+
+/** Google-Adresse der angemeldeten Person (für die Verwaltungs-Berechtigung). */
+export async function getUserEmail() {
+  const res = await driveFetch("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)");
+  const data = await res.json();
+  return String(data.user?.emailAddress ?? "").toLowerCase();
+}
+
+// ---------- Aktive Stücke (kleine JSON-Datei in Drive) ----------
+// Inhalt: { "inaktiv": ["<Ordner-ID>", …], "geaendert": "2026-…", "von": "name@gmail.com" }
+// Gespeichert wird nur, welche Stücke INAKTIV sind. Neue Stücke sind damit automatisch aktiv.
+
+async function findStatusFile(folderId, fileName) {
+  const files = await listAll(
+    `'${folderId}' in parents and name = '${fileName.replace(/'/g, "\\'")}' and trashed = false`,
+    "id, modifiedTime",
+  );
+  files.sort((a, b) => String(b.modifiedTime).localeCompare(String(a.modifiedTime)));
+  return files[0] ?? null;
+}
+
+export async function loadStatus({ folderId, fileName }) {
+  const file = await findStatusFile(folderId, fileName);
+  if (!file) return { inaktiv: [], fileId: null };
+  const res = await driveFetch(`${API}/${file.id}?alt=media&supportsAllDrives=true`);
+  const data = await res.json().catch(() => ({}));
+  return { inaktiv: Array.isArray(data.inaktiv) ? data.inaktiv : [], geaendert: data.geaendert, von: data.von, fileId: file.id };
+}
+
+export async function saveStatus({ folderId, fileName, fileId, inaktiv, von }) {
+  const body = JSON.stringify({ inaktiv, geaendert: new Date().toISOString(), von }, null, 2);
+  if (fileId) {
+    const res = await driveFetch(`${UPLOAD}/${fileId}?uploadType=media&supportsAllDrives=true&fields=id`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body,
+    });
+    return (await res.json()).id;
+  }
+  // Datei anlegen (mehrteilige Anfrage: Metadaten + Inhalt)
+  const boundary = "notenarchiv" + Date.now();
+  const meta = JSON.stringify({ name: fileName, parents: [folderId], mimeType: "application/json" });
+  const multipart =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+  const res = await driveFetch(`${UPLOAD}?uploadType=multipart&supportsAllDrives=true&fields=id`, {
+    method: "POST", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body: multipart,
+  });
+  return (await res.json()).id;
 }
 
 // ---------- Namen auswerten ----------

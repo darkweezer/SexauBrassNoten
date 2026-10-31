@@ -31,7 +31,11 @@ Damit sich Musikerinnen und Musiker in der App mit Google anmelden können, brau
 2. Im Filter `drive.readonly` eingeben, den Eintrag
    `.../auth/drive.readonly` anhaken → **Aktualisieren** → unten **Speichern**.
 
-Die App kann damit Dateien **nur ansehen und herunterladen**, aber nichts ändern oder löschen.
+3. Auf die gleiche Weise auch `.../auth/drive.file` hinzufügen und speichern.
+
+Mit `drive.readonly` kann die App Noten **nur ansehen und herunterladen**, aber nichts ändern oder löschen.
+`drive.file` brauchen nur Verwaltende: Damit darf die App ausschließlich die eine Datei
+`notenarchiv-aktive-stuecke.json` anlegen und ändern, die sie selbst erstellt hat. Musiker werden danach nicht gefragt.
 
 ## 5. Musiker freischalten (das ist die Zugangsliste)
 

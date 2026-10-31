@@ -4,8 +4,9 @@
 
 import { CONFIG } from "./config.js";
 import {
-  initAuth, signIn, signOut, isSignedIn, wasSignedInBefore,
+  initAuth, signIn, signOut, isSignedIn, wasSignedInBefore, canWrite,
   loadSongsFromDrive, downloadPdf, NotLoggedInError,
+  getUserEmail, loadStatus, saveStatus,
 } from "./drive.js";
 import { INSTRUMENT_ORDER } from "./instruments.js";
 
@@ -15,11 +16,18 @@ const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, titl
 const MAX_OFFLINE_FILES = 150;  // Obergrenze, damit der Gerätespeicher nicht überläuft
 const LS_SONGS = "notenarchiv.stueckliste.v2"; // v2: Instrumente zusammengefasst
 const LS_INSTRUMENT = "notenarchiv.instrument";
+const LS_STATUS = "notenarchiv.inaktiv";
 
 const state = {
   songs: [],          // [{ id, number, title, files: [{ id, name, voice, instrument, instruments, size }] }]
   offline: new Map(), // fileId -> Eintrag aus IndexedDB (ohne Blob)
   loading: false,
+  inaktiv: new Set(), // Ordner-IDs der Stücke, die gerade nicht gespielt werden
+  statusFileId: null,
+  statusInfo: null,   // { geaendert, von }
+  email: "",
+  isAdmin: false,
+  draft: null,        // Verwaltung: noch nicht gespeicherte Änderungen (Set)
 };
 
 // ---------- Hilfsfunktionen ----------
@@ -128,7 +136,8 @@ async function refreshSongs() {
   $("#result-count").textContent = "Noten werden aus Google Drive geladen …";
   $("#result-count").classList.add("loading");
   try {
-    state.songs = await loadSongsFromDrive(CONFIG.NOTEN_ORDNER);
+    const [songs] = await Promise.all([loadSongsFromDrive(CONFIG.NOTEN_ORDNER), refreshStatus()]);
+    state.songs = songs;
     lsSet(LS_SONGS, JSON.stringify({ loadedAt: Date.now(), songs: state.songs }));
   } finally {
     state.loading = false;
@@ -136,6 +145,107 @@ async function refreshSongs() {
   }
   populateInstrumentFilter();
   renderSongs();
+  if (state.isAdmin) renderAdmin();
+}
+
+// ---------- Aktive Stücke ----------
+
+function loadCachedStatus() {
+  try {
+    const data = JSON.parse(lsGet(LS_STATUS) ?? "null");
+    if (Array.isArray(data?.inaktiv)) state.inaktiv = new Set(data.inaktiv);
+  } catch {}
+}
+
+async function refreshStatus() {
+  try {
+    const status = await loadStatus(CONFIG.STATUS_DATEI);
+    // Entwurf in der Verwaltung nur verwerfen, wenn dort nichts ungespeichert ist
+    if (state.draft && sameSet(state.draft, state.inaktiv)) state.draft = null;
+    state.inaktiv = new Set(status.inaktiv);
+    state.statusFileId = status.fileId;
+    state.statusInfo = status.geaendert ? { geaendert: status.geaendert, von: status.von } : null;
+    lsSet(LS_STATUS, JSON.stringify({ inaktiv: status.inaktiv }));
+  } catch (err) {
+    if (err instanceof NotLoggedInError) throw err;
+    // ohne Status-Datei sind einfach alle Stücke aktiv
+  }
+}
+
+const isActive = (song) => !state.inaktiv.has(song.id);
+
+async function checkAdmin() {
+  try {
+    state.email = await getUserEmail();
+  } catch { state.email = ""; }
+  const admins = (CONFIG.VERWALTUNG ?? []).map((a) => a.toLowerCase().replace("@googlemail.com", "@gmail.com"));
+  state.isAdmin = admins.includes(state.email.replace("@googlemail.com", "@gmail.com"));
+  $("#tab-admin").classList.toggle("hidden", !state.isAdmin);
+  if (state.isAdmin) renderAdmin();
+}
+
+// ---------- Verwaltung ----------
+
+function renderAdmin() {
+  if (!state.draft) state.draft = new Set(state.inaktiv);
+  const query = $("#admin-search").value.trim();
+  const filter = $("#admin-filter").value;
+  const songs = [...state.songs]
+    .sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"))
+    .filter((s) => matchesSearch(s, query))
+    .filter((s) => filter === "alle" || (filter === "aktiv") === !state.draft.has(s.id));
+
+  const activeCount = state.songs.filter((s) => !state.draft.has(s.id)).length;
+  $("#admin-count").textContent = `${activeCount} von ${state.songs.length} Stücken aktiv`;
+
+  const changed = !sameSet(state.draft, state.inaktiv);
+  $("#admin-save").disabled = !changed;
+  $("#admin-unsaved").classList.toggle("hidden", !changed);
+  const info = state.statusInfo;
+  $("#admin-info").textContent = info
+    ? `Zuletzt gespeichert am ${new Date(info.geaendert).toLocaleString("de-DE")} von ${info.von}`
+    : "Noch nichts gespeichert: Alle Stücke gelten als aktiv.";
+
+  $("#admin-list").innerHTML = songs.map((s) => {
+    const active = !state.draft.has(s.id);
+    return `
+      <tr class="${active ? "" : "is-inactive"}">
+        <td class="num">${s.number ?? "–"}</td>
+        <td>${escapeHtml(s.title)}<span class="admin-meta">${s.files.length} Dateien</span></td>
+        <td class="switch-cell">
+          <label class="switch">
+            <input type="checkbox" data-toggle-song="${escapeHtml(s.id)}" ${active ? "checked" : ""} />
+            <span class="slider" aria-hidden="true"></span>
+            <span class="visually-hidden">${escapeHtml(s.title)} aktiv</span>
+          </label>
+        </td>
+      </tr>`;
+  }).join("") || `<tr><td colspan="3" class="hint">Keine Stücke gefunden.</td></tr>`;
+}
+
+function sameSet(a, b) {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+
+async function saveAdmin(button) {
+  button.disabled = true;
+  try {
+    // Schreibrecht nur für Dateien dieser App; beim ersten Mal fragt Google nach
+    if (!canWrite()) await signIn({ interactive: true, withWrite: true });
+    const inaktiv = [...state.draft];
+    state.statusFileId = await saveStatus({ ...CONFIG.STATUS_DATEI, fileId: state.statusFileId, inaktiv, von: state.email });
+    state.inaktiv = new Set(inaktiv);
+    state.statusInfo = { geaendert: new Date().toISOString(), von: state.email };
+    lsSet(LS_STATUS, JSON.stringify({ inaktiv }));
+    toast("Gespeichert. Alle sehen die Änderung beim nächsten Öffnen.");
+    renderSongs();
+  } catch (err) {
+    handleError(err);
+  } finally {
+    renderAdmin();
+  }
 }
 
 // ---------- Anmeldung ----------
@@ -150,7 +260,7 @@ async function handleLoginClick() {
   try {
     await signIn({ interactive: true });
     updateLoginUi();
-    await refreshSongs();
+    await Promise.all([refreshSongs(), checkAdmin()]);
     toast("Angemeldet");
   } catch (err) {
     toast(err.message, 4000);
@@ -176,6 +286,7 @@ function showView(name) {
   document.querySelectorAll(".view").forEach((v) =>
     v.classList.toggle("is-active", v.id === `view-${name}`));
   if (name === "offline") renderOffline();
+  if (name === "admin") renderAdmin();
 }
 
 function populateInstrumentFilter() {
@@ -208,11 +319,17 @@ function voiceChip(f) {
 function renderSongs() {
   const query = $("#search").value.trim();
   const instrument = $("#voice-filter").value;
+  const showInactive = $("#show-inactive").checked;
 
   const visible = state.songs
     .filter((s) => matchesSearch(s, query))
     .filter((s) => !instrument || s.files.some((f) => fileHas(f, instrument)))
+    .filter((s) => showInactive || isActive(s))
     .sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"));
+
+  const hiddenCount = state.songs.filter((s) => !isActive(s)).length;
+  $("#inactive-toggle").classList.toggle("hidden", hiddenCount === 0);
+  $("#inactive-label").textContent = `Auch ${hiddenCount} nicht aktive Stücke zeigen`;
 
   if (!state.loading) {
     $("#result-count").textContent = state.songs.length === 0
@@ -224,8 +341,8 @@ function renderSongs() {
     const mine = instrument ? song.files.filter((f) => fileHas(f, instrument)) : [];
     const number = song.number != null ? `<span class="song-number">${song.number}</span> ` : "";
     return `
-      <li class="song">
-        <div class="song-title">${number}${escapeHtml(song.title)}</div>
+      <li class="song${isActive(song) ? "" : " is-inactive"}">
+        <div class="song-title">${number}${escapeHtml(song.title)}${isActive(song) ? "" : ` <span class="badge muted">nicht aktiv</span>`}</div>
         ${instrument ? `
           <div class="voices">${mine.map(voiceChip).join("")}</div>
           <div class="song-actions">
@@ -323,6 +440,20 @@ function bindEvents() {
     t.addEventListener("click", () => showView(t.dataset.view)));
 
   $("#search").addEventListener("input", renderSongs);
+  $("#show-inactive").addEventListener("change", renderSongs);
+  $("#admin-search").addEventListener("input", renderAdmin);
+  $("#admin-filter").addEventListener("change", renderAdmin);
+  $("#admin-save").addEventListener("click", (e) => saveAdmin(e.currentTarget));
+  $("#admin-reset").addEventListener("click", () => { state.draft = new Set(state.inaktiv); renderAdmin(); });
+  $("#admin-all-on").addEventListener("click", () => { state.draft = new Set(); renderAdmin(); });
+  $("#admin-all-off").addEventListener("click", () => { state.draft = new Set(state.songs.map((s) => s.id)); renderAdmin(); });
+  $("#admin-list").addEventListener("change", (e) => {
+    const box = e.target.closest("[data-toggle-song]");
+    if (!box) return;
+    if (box.checked) state.draft.delete(box.dataset.toggleSong);
+    else state.draft.add(box.dataset.toggleSong);
+    renderAdmin();
+  });
   $("#voice-filter").addEventListener("change", () => {
     lsSet(LS_INSTRUMENT, $("#voice-filter").value);
     renderSongs();
@@ -330,6 +461,9 @@ function bindEvents() {
   $("#login-btn").addEventListener("click", handleLoginClick);
   $("#logout-btn").addEventListener("click", () => {
     signOut();
+    state.isAdmin = false;
+    $("#tab-admin").classList.add("hidden");
+    showView("search");
     updateLoginUi();
     toast("Abgemeldet. Offline gespeicherte Noten bleiben erhalten.");
   });
@@ -383,6 +517,7 @@ async function init() {
 
   // Zuletzt geladene Stückliste sofort zeigen (funktioniert auch ohne Internet)
   loadCachedSongs();
+  loadCachedStatus();
   populateInstrumentFilter();
   renderSongs();
   updateStorageEstimate();
@@ -403,7 +538,7 @@ async function init() {
       // still neu anmelden; wenn das nicht klappt, erscheint der Anmelde-Knopf
       await signIn({ interactive: false });
       updateLoginUi();
-      await refreshSongs();
+      await Promise.all([refreshSongs(), checkAdmin()]);
     }
   } catch (err) {
     updateLoginUi();

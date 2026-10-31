@@ -19,9 +19,10 @@
       <h1>Notenarchiv <span class="sub">Sexau Brass</span></h1>
     </div>
     <nav class="tabs" aria-label="Hauptbereiche">
-      <button class="tab is-active" data-view="search" type="button">Alle Noten</button>
+      <button class="tab is-active" data-view="search" type="button">Noten</button>
       <button class="tab" data-view="offline" type="button">Offline</button>
       <button class="tab" data-view="help" type="button">Hilfe</button>
+      <button class="tab hidden" id="tab-admin" data-view="admin" type="button">Verwaltung</button>
     </nav>
   </header>
 
@@ -45,7 +46,50 @@
         </label>
       </div>
       <p id="result-count" class="hint" aria-live="polite"></p>
+      <label id="inactive-toggle" class="check hidden">
+        <input type="checkbox" id="show-inactive" />
+        <span id="inactive-label">Auch nicht aktive Stücke zeigen</span>
+      </label>
       <ul id="song-list" class="song-list"></ul>
+    </section>
+
+    <!-- Verwaltung (nur für eingetragene Verwaltende sichtbar) -->
+    <section id="view-admin" class="view" aria-label="Verwaltung">
+      <h2>Stücke verwalten</h2>
+      <p class="hint">Hier legst du fest, welche Stücke gerade gespielt werden. Nicht aktive Stücke sind für alle ausgeblendet, bleiben aber in Drive erhalten.</p>
+      <div class="toolbar">
+        <label class="search">
+          <span class="visually-hidden">Suche</span>
+          <input id="admin-search" type="search" placeholder="Titel oder Nummer suchen" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Anzeigen</span>
+          <select id="admin-filter">
+            <option value="alle">Alle Stücke</option>
+            <option value="aktiv">Nur aktive</option>
+            <option value="inaktiv">Nur nicht aktive</option>
+          </select>
+        </label>
+      </div>
+      <p id="admin-info" class="hint"></p>
+      <div class="admin-bar">
+        <span id="admin-count" class="hint"></span>
+        <span class="song-actions">
+          <button id="admin-all-on" class="btn secondary small" type="button">Alle aktiv</button>
+          <button id="admin-all-off" class="btn secondary small" type="button">Alle nicht aktiv</button>
+        </span>
+      </div>
+      <table class="admin-table">
+        <thead><tr><th class="num">Nr.</th><th>Stück</th><th class="switch-cell">Aktiv</th></tr></thead>
+        <tbody id="admin-list"></tbody>
+      </table>
+      <div class="admin-save">
+        <p id="admin-unsaved" class="hint hidden">Es gibt ungespeicherte Änderungen.</p>
+        <div class="song-actions">
+          <button id="admin-save" class="btn" type="button" disabled>Speichern</button>
+          <button id="admin-reset" class="btn secondary" type="button">Verwerfen</button>
+        </div>
+      </div>
     </section>
 
     <!-- Offline -->

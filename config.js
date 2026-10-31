@@ -11,4 +11,13 @@ export const CONFIG = {
     { id: "1x8tVwolO0y1TMN0oCD0Fid6dVHDAsOIk", name: "Noten 1" },
     { id: "1RRCxuh4ViIX06kJ63JLJKSNgS7sLm2eq", name: "Noten 2" },
   ],
+
+  // Wer die Seite „Verwaltung“ sieht (Google-Adressen, klein geschrieben, @gmail.com statt @googlemail.com).
+  // Speichern klappt nur, wer auch Schreibrechte im ersten Noten-Ordner hat.
+  VERWALTUNG: [
+    "darkweezer@gmail.com",
+  ],
+
+  // Hier merkt sich die App, welche Stücke gerade nicht gespielt werden (Datei wird automatisch angelegt).
+  STATUS_DATEI: { folderId: "1x8tVwolO0y1TMN0oCD0Fid6dVHDAsOIk", fileName: "notenarchiv-aktive-stuecke.json" },
 };
