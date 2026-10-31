@@ -51,8 +51,7 @@ Person entfernen = an beiden Stellen wieder austragen.
 1. Links auf **Clients** → **Client erstellen**.
 2. Anwendungstyp: **Webanwendung**, Name: `Notenarchiv Web`.
 3. Unter **Autorisierte JavaScript-Quellen** zwei Einträge hinzufügen:
-   - die Adresse der App bei Netlify, z. B. `https://sexaubrassnoten.netlify.app`
-     (genaue Adresse steht nach der Einrichtung bei Netlify; später nachtragen ist möglich)
+   - `https://darkweezer.github.io` (Adresse der App bei GitHub Pages, ohne Schrägstrich am Ende)
    - `http://localhost:8000`
 4. „Autorisierte Weiterleitungs-URIs“ leer lassen → **Erstellen**.
 5. Die angezeigte **Client-ID** kopieren (endet auf `.apps.googleusercontent.com`).

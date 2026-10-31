@@ -55,7 +55,7 @@ notenapp/
 - [ ] Instrumentnamen vereinheitlichen (z. B. „Trp“ und „Trompete“)
 - [ ] Datenbank / Admin-Bereich nur, falls später wirklich nötig
 - [ ] Anleitung „So installieren Sie die App“ mit Bildern
-- [ ] Hosting über Netlify (Repository bleibt privat)
+- [ ] Hosting über GitHub Pages: https://darkweezer.github.io/SexauBrassNoten/ (Repository muss dafür öffentlich sein)
 
 ## Lokal ausprobieren
 
@@ -70,6 +70,15 @@ Dann im Browser `http://localhost:8000` öffnen.
 
 Damit die Anmeldung lokal klappt, muss `http://localhost:8000` in der Google Cloud Console als
 JavaScript-Quelle eingetragen sein.
+
+## Online stellen (GitHub Pages)
+
+1. Repository öffentlich machen: GitHub → Settings → ganz unten „Change visibility“ → „Make public“.
+2. GitHub → Settings → Pages → bei „Source“ **Deploy from a branch** wählen, Branch **main**, Ordner **/ (root)** → **Save**.
+3. Nach 1–2 Minuten ist die App erreichbar unter https://darkweezer.github.io/SexauBrassNoten/
+4. In der Google Cloud Console beim Client `https://darkweezer.github.io` als JavaScript-Quelle eintragen.
+
+Jede Änderung auf `main` ist danach automatisch nach 1–2 Minuten online.
 
 ## Neue Noten hinzufügen
 
