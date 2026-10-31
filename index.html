@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1f3a5f" />
+  <meta name="description" content="Notenarchiv: Noten finden, anzeigen und offline speichern" />
+  <title>Notenarchiv</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Notenarchiv</h1>
+    <nav class="tabs" aria-label="Hauptbereiche">
+      <button class="tab is-active" data-view="search" type="button">Alle Noten</button>
+      <button class="tab" data-view="offline" type="button">Offline</button>
+      <button class="tab" data-view="help" type="button">Hilfe</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Alle Noten -->
+    <section id="view-search" class="view is-active" aria-label="Alle Noten">
+      <div class="toolbar">
+        <label class="search">
+          <span class="visually-hidden">Suche</span>
+          <input id="search" type="search" placeholder="Titel oder Komponist suchen" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Meine Stimme</span>
+          <select id="voice-filter">
+            <option value="">Alle Stimmen</option>
+          </select>
+        </label>
+      </div>
+      <p id="result-count" class="hint" aria-live="polite"></p>
+      <ul id="song-list" class="song-list"></ul>
+    </section>
+
+    <!-- Offline -->
+    <section id="view-offline" class="view" aria-label="Offline verfügbar">
+      <div class="storage">
+        <p id="storage-info" class="hint">Speicher wird ermittelt …</p>
+        <div class="meter" aria-hidden="true"><span id="storage-bar"></span></div>
+      </div>
+      <ul id="offline-list" class="song-list"></ul>
+      <p id="offline-empty" class="hint hidden">Noch keine Noten auf diesem Gerät gespeichert.</p>
+    </section>
+
+    <!-- Hilfe -->
+    <section id="view-help" class="view" aria-label="Hilfe">
+      <h2>So installieren Sie die App</h2>
+      <h3>Android (Chrome)</h3>
+      <ol>
+        <li>Diese Seite in Chrome öffnen.</li>
+        <li>Menü (⋮) antippen.</li>
+        <li>„Zum Startbildschirm hinzufügen“ oder „App installieren“ wählen.</li>
+      </ol>
+      <h3>iPhone und iPad (Safari)</h3>
+      <ol>
+        <li>Diese Seite in Safari öffnen (nicht in einer anderen Browser-App).</li>
+        <li>Teilen-Symbol antippen (Quadrat mit Pfeil nach oben).</li>
+        <li>„Zum Home-Bildschirm“ wählen.</li>
+      </ol>
+      <h3>PC (Chrome oder Edge)</h3>
+      <ol>
+        <li>Diese Seite öffnen.</li>
+        <li>Im Adressfeld das Installations-Symbol anklicken.</li>
+        <li>„Installieren“ wählen.</li>
+      </ol>
+      <h2>Noten offline speichern</h2>
+      <p>Bei einem Stück auf „Offline speichern“ tippen. Die Noten bleiben danach auch ohne Internet im Bereich „Offline“ verfügbar.</p>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
