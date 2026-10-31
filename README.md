@@ -55,7 +55,7 @@ notenapp/
 - [ ] Instrumentnamen vereinheitlichen (z. B. „Trp“ und „Trompete“)
 - [ ] Datenbank / Admin-Bereich nur, falls später wirklich nötig
 - [ ] Anleitung „So installieren Sie die App“ mit Bildern
-- [ ] Hosting (z. B. Netlify, Cloudflare Pages oder GitHub Pages, jeweils mit HTTPS)
+- [ ] Hosting über Netlify (Repository bleibt privat)
 
 ## Lokal ausprobieren
 
