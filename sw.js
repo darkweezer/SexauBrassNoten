@@ -1,14 +1,15 @@
 // Service Worker: hält die App-Hülle offline verfügbar.
 // PDFs werden NICHT hier gecacht, sondern über IndexedDB (siehe app.js).
 
-const CACHE_VERSION = "notenarchiv-v1";
+const CACHE_VERSION = "notenarchiv-v2";
 const APP_SHELL = [
   "./",
   "index.html",
   "styles.css",
   "app.js",
+  "config.js",
+  "drive.js",
   "manifest.webmanifest",
-  "data/songs.json",
   "icons/icon-192.png",
   "icons/icon-512.png",
 ];
@@ -32,26 +33,17 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
-  // Netz zuerst für Daten (damit neue Noten sichtbar werden), Cache als Fallback
-  if (req.url.includes("/data/")) {
-    event.respondWith(
-      fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
-        return res;
-      }).catch(() => caches.match(req))
-    );
-    return;
-  }
+  // Nur eigene Dateien behandeln. Google-Anmeldung und Drive-Downloads laufen direkt ins Netz.
+  if (new URL(req.url).origin !== self.location.origin) return;
 
-  // Cache zuerst für die App-Hülle
+  // Netz zuerst, damit Änderungen an der App sofort ankommen. Ohne Internet: gespeicherte Kopie.
   event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req).then((res) => {
-      if (res.ok && new URL(req.url).origin === self.location.origin) {
+    fetch(req).then((res) => {
+      if (res.ok) {
         const copy = res.clone();
         caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
       }
       return res;
-    }))
+    }).catch(() => caches.match(req, { ignoreSearch: true }))
   );
 });

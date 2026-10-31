@@ -1,15 +1,24 @@
 // Notenarchiv – Hauptlogik
-// Stand: Grundgerüst. Login, Drive-Anbindung und Datenbank folgen (siehe README).
+// Noten kommen live aus den zwei Google-Drive-Ordnern (siehe drive.js und config.js).
+// Offline-Kopien liegen in IndexedDB auf dem Gerät.
 
-const DATA_URL = "data/songs.json";
+import { CONFIG } from "./config.js";
+import {
+  initAuth, signIn, signOut, isSignedIn, wasSignedInBefore,
+  loadSongsFromDrive, downloadPdf, NotLoggedInError,
+} from "./drive.js";
+
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
 const MAX_OFFLINE_FILES = 150;  // Obergrenze, damit der Gerätespeicher nicht überläuft
+const LS_SONGS = "notenarchiv.stueckliste";
+const LS_INSTRUMENT = "notenarchiv.instrument";
 
 const state = {
-  songs: [],        // [{ id, title, composer, files: [{ id, voice, url }] }]
+  songs: [],          // [{ id, number, title, files: [{ id, name, voice, instrument, size }] }]
   offline: new Map(), // fileId -> Eintrag aus IndexedDB (ohne Blob)
+  loading: false,
 };
 
 // ---------- Hilfsfunktionen ----------
@@ -34,6 +43,9 @@ function escapeHtml(text) {
   return String(text ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+function lsGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function lsSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
 
 // ---------- IndexedDB (Offline-Speicher) ----------
 
@@ -92,24 +104,61 @@ async function getPdfBlob(fileId) {
   });
 }
 
-// ---------- Daten laden ----------
+// ---------- Stückliste ----------
 
-async function loadSongs() {
-  // Später: Abfrage der Datenbank. Im Moment: lokale Beispieldatei.
-  const res = await fetch(DATA_URL);
-  if (!res.ok) throw new Error("Notenliste konnte nicht geladen werden");
-  const data = await res.json();
-  state.songs = data.songs;
+function loadCachedSongs() {
+  try {
+    const data = JSON.parse(lsGet(LS_SONGS) ?? "null");
+    if (data?.songs) {
+      state.songs = data.songs;
+      return data.loadedAt;
+    }
+  } catch {}
+  return null;
 }
 
-/**
- * Lädt die PDF-Datei eines Eintrags.
- * Platzhalter: Hier kommt später der Abruf über die Google Drive API (mit Login-Token) hinein.
- */
-async function fetchPdf(file) {
-  const res = await fetch(file.url);
-  if (!res.ok) throw new Error(`Download fehlgeschlagen (${res.status})`);
-  return res.blob();
+async function refreshSongs() {
+  if (state.loading) return;
+  state.loading = true;
+  $("#result-count").textContent = "Noten werden aus Google Drive geladen …";
+  try {
+    state.songs = await loadSongsFromDrive(CONFIG.NOTEN_ORDNER);
+    lsSet(LS_SONGS, JSON.stringify({ loadedAt: Date.now(), songs: state.songs }));
+  } finally {
+    state.loading = false;
+  }
+  populateInstrumentFilter();
+  renderSongs();
+}
+
+// ---------- Anmeldung ----------
+
+function updateLoginUi() {
+  const signedIn = isSignedIn();
+  $("#login-box").classList.toggle("hidden", signedIn);
+  $("#logout-btn").classList.toggle("hidden", !signedIn);
+}
+
+async function handleLoginClick() {
+  try {
+    await signIn({ interactive: true });
+    updateLoginUi();
+    await refreshSongs();
+    toast("Angemeldet");
+  } catch (err) {
+    toast(err.message, 4000);
+  }
+}
+
+function handleError(err) {
+  if (err instanceof NotLoggedInError) {
+    updateLoginUi();
+    $("#login-box").classList.remove("hidden");
+    showView("search");
+    toast("Bitte neu anmelden, um Noten aus Drive zu laden.", 4000);
+    return;
+  }
+  toast(offlineHint(err), 4000);
 }
 
 // ---------- Ansichten ----------
@@ -122,67 +171,75 @@ function showView(name) {
   if (name === "offline") renderOffline();
 }
 
-function populateVoiceFilter() {
-  const voices = new Set();
-  state.songs.forEach((s) => s.files.forEach((f) => voices.add(f.voice)));
+function populateInstrumentFilter() {
+  const instruments = new Set();
+  state.songs.forEach((s) => s.files.forEach((f) => instruments.add(f.instrument)));
   const select = $("#voice-filter");
-  [...voices].sort().forEach((v) => {
+  const current = select.value || lsGet(LS_INSTRUMENT) || "";
+  select.innerHTML = `<option value="">Alle Instrumente</option>`;
+  [...instruments].sort((a, b) => a.localeCompare(b, "de")).forEach((v) => {
     const opt = document.createElement("option");
     opt.value = v;
     opt.textContent = v;
     select.append(opt);
   });
+  select.value = instruments.has(current) ? current : "";
 }
 
 function matchesSearch(song, query) {
   if (!query) return true;
   const q = query.toLowerCase();
-  return song.title.toLowerCase().includes(q) || (song.composer ?? "").toLowerCase().includes(q);
+  return song.title.toLowerCase().includes(q) || String(song.number ?? "") === q;
+}
+
+function voiceChip(f) {
+  const off = state.offline.has(f.id);
+  return `<button class="voice-chip" data-open="${escapeHtml(f.id)}" type="button">${escapeHtml(f.voice)}${off ? " ✓" : ""}</button>`;
 }
 
 function renderSongs() {
   const query = $("#search").value.trim();
-  const voice = $("#voice-filter").value;
+  const instrument = $("#voice-filter").value;
 
   const visible = state.songs
     .filter((s) => matchesSearch(s, query))
-    .filter((s) => !voice || s.files.some((f) => f.voice === voice))
-    .sort((a, b) => a.title.localeCompare(b.title, "de"));
+    .filter((s) => !instrument || s.files.some((f) => f.instrument === instrument))
+    .sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"));
 
-  $("#result-count").textContent =
-    visible.length === 1 ? "1 Stück gefunden" : `${visible.length} Stücke gefunden`;
+  if (!state.loading) {
+    $("#result-count").textContent = state.songs.length === 0
+      ? "Noch keine Noten geladen."
+      : visible.length === 1 ? "1 Stück gefunden" : `${visible.length} Stücke gefunden`;
+  }
 
-  const list = $("#song-list");
-  list.innerHTML = visible.map((song) => {
-    const files = voice ? song.files.filter((f) => f.voice === voice) : song.files;
+  $("#song-list").innerHTML = visible.map((song) => {
+    const mine = instrument ? song.files.filter((f) => f.instrument === instrument) : [];
+    const number = song.number != null ? `<span class="song-number">${song.number}</span> ` : "";
     return `
       <li class="song">
-        <div>
-          <div class="song-title">${escapeHtml(song.title)}</div>
-          <div class="song-meta">${escapeHtml(song.composer ?? "")}</div>
-        </div>
-        <div class="voices">
-          ${files.map((f) => {
-            const off = state.offline.has(f.id);
-            return `
-              <span>
-                <button class="voice-chip" data-open="${escapeHtml(f.id)}" type="button">
-                  ${escapeHtml(f.voice)}${off ? " ✓" : ""}
-                </button>
-              </span>`;
-          }).join("")}
-        </div>
-        <div class="song-actions">
-          <button class="btn secondary" data-save-song="${escapeHtml(song.id)}" type="button">
-            Alle Stimmen offline speichern
-          </button>
-        </div>
+        <div class="song-title">${number}${escapeHtml(song.title)}</div>
+        ${instrument ? `
+          <div class="voices">${mine.map(voiceChip).join("")}</div>
+          <div class="song-actions">
+            <button class="btn secondary" data-save-song="${escapeHtml(song.id)}" type="button">
+              ${mine.length === 1 ? "Offline speichern" : "Meine Stimmen offline speichern"}
+            </button>
+          </div>
+          <details class="all-voices">
+            <summary>Alle Stimmen (${song.files.length})</summary>
+            <div class="voices">${song.files.map(voiceChip).join("")}</div>
+          </details>` : `
+          <details class="all-voices">
+            <summary>Stimmen anzeigen (${song.files.length})</summary>
+            <div class="voices">${song.files.map(voiceChip).join("")}</div>
+          </details>`}
       </li>`;
   }).join("");
 }
 
 function renderOffline() {
-  const entries = [...state.offline.values()].sort((a, b) => a.title.localeCompare(b.title, "de"));
+  const entries = [...state.offline.values()].sort((a, b) =>
+    a.title.localeCompare(b.title, "de") || a.voice.localeCompare(b.voice, "de", { numeric: true }));
   const totalBytes = entries.reduce((sum, e) => sum + (e.size || 0), 0);
 
   $("#offline-empty").classList.toggle("hidden", entries.length > 0);
@@ -206,14 +263,18 @@ function renderOffline() {
 // ---------- Aktionen ----------
 
 async function openFile(fileId) {
+  // Fenster sofort im Klick öffnen, sonst blockieren iPhone und iPad es
+  const win = window.open("", "_blank");
   try {
     const offlineBlob = await getPdfBlob(fileId);
-    const blob = offlineBlob ?? (await fetchPdf(findFile(fileId)));
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener");
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const blob = offlineBlob ?? (await downloadPdf(fileId));
+    const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+    if (win) win.location.href = url;
+    else window.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 120_000);
   } catch (err) {
-    toast(offlineHint(err));
+    win?.close();
+    handleError(err);
   }
 }
 
@@ -227,26 +288,19 @@ async function saveFiles(fileEntries, button) {
         toast(`Maximal ${MAX_OFFLINE_FILES} Noten offline. Bitte zuerst Noten entfernen.`, 4000);
         break;
       }
-      const blob = await fetchPdf(file);
+      if (button) button.textContent = `Speichere ${saved + 1} von ${fileEntries.length} …`;
+      const blob = await downloadPdf(file.id);
       await savePdf(file, blob);
       saved++;
     }
     if (saved) toast(`${saved} ${saved === 1 ? "Datei" : "Dateien"} offline gespeichert`);
     else toast("Alles ist bereits offline verfügbar");
   } catch (err) {
-    toast(offlineHint(err));
+    handleError(err);
   } finally {
     if (button) button.disabled = false;
     renderSongs();
   }
-}
-
-function findFile(fileId) {
-  for (const song of state.songs) {
-    const f = song.files.find((x) => x.id === fileId);
-    if (f) return { ...f, songId: song.id, title: `${song.title} – ${f.voice}` };
-  }
-  throw new Error("Datei nicht gefunden");
 }
 
 function offlineHint(err) {
@@ -261,7 +315,17 @@ function bindEvents() {
     t.addEventListener("click", () => showView(t.dataset.view)));
 
   $("#search").addEventListener("input", renderSongs);
-  $("#voice-filter").addEventListener("change", renderSongs);
+  $("#voice-filter").addEventListener("change", () => {
+    lsSet(LS_INSTRUMENT, $("#voice-filter").value);
+    renderSongs();
+  });
+  $("#login-btn").addEventListener("click", handleLoginClick);
+  $("#logout-btn").addEventListener("click", () => {
+    signOut();
+    updateLoginUi();
+    toast("Abgemeldet. Offline gespeicherte Noten bleiben erhalten.");
+  });
+  $("#refresh-btn").addEventListener("click", () => refreshSongs().catch(handleError));
 
   // Klicks in Listen (Delegation)
   document.body.addEventListener("click", async (event) => {
@@ -271,7 +335,11 @@ function bindEvents() {
     const saveBtn = event.target.closest("[data-save-song]");
     if (saveBtn) {
       const song = state.songs.find((s) => s.id === saveBtn.dataset.saveSong);
-      if (song) return saveFiles(song.files.map((f) => ({ ...f, songId: song.id, title: `${song.title} – ${f.voice}` })), saveBtn);
+      const instrument = $("#voice-filter").value;
+      if (song) {
+        const files = song.files.filter((f) => !instrument || f.instrument === instrument);
+        return saveFiles(files.map((f) => ({ id: f.id, songId: song.id, voice: f.voice, title: song.title })), saveBtn);
+      }
     }
 
     const removeBtn = event.target.closest("[data-remove]");
@@ -285,13 +353,14 @@ function bindEvents() {
 }
 
 async function updateStorageEstimate() {
-  // Ergänzend zur Anzeige: tatsächlicher Speicherbedarf des Browsers
   if (navigator.storage?.estimate) {
     const { usage, quota } = await navigator.storage.estimate();
     if (usage && quota) {
       $("#storage-info").title = `Browser-Speicher: ${formatBytes(usage)} von ${formatBytes(quota)}`;
     }
   }
+  // Browser bitten, die Offline-Noten nicht automatisch zu löschen
+  navigator.storage?.persist?.().catch(() => {});
 }
 
 // ---------- Start ----------
@@ -300,16 +369,39 @@ async function init() {
   bindEvents();
   try {
     await loadOfflineIndex();
-    await loadSongs();
-    populateVoiceFilter();
-    renderSongs();
-    updateStorageEstimate();
   } catch (err) {
-    toast(err.message, 5000);
+    toast("Offline-Speicher nicht verfügbar.", 4000);
   }
+
+  // Zuletzt geladene Stückliste sofort zeigen (funktioniert auch ohne Internet)
+  loadCachedSongs();
+  populateInstrumentFilter();
+  renderSongs();
+  updateStorageEstimate();
+  updateLoginUi();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+
+  if (!navigator.onLine) {
+    if (state.offline.size) showView("offline");
+    return;
+  }
+
+  try {
+    await initAuth(CONFIG.GOOGLE_CLIENT_ID);
+    if (wasSignedInBefore()) {
+      // still neu anmelden; wenn das nicht klappt, erscheint der Anmelde-Knopf
+      await signIn({ interactive: false });
+      updateLoginUi();
+      await refreshSongs();
+    }
+  } catch (err) {
+    updateLoginUi();
+    if (!(err instanceof NotLoggedInError) && !/abgebrochen|nicht möglich/.test(err.message)) {
+      toast(err.message, 4000);
+    }
   }
 }
 
