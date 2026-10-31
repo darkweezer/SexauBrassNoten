@@ -8,7 +8,7 @@ export const CONFIG = {
 
   // Die beiden Drive-Ordner „Noten“. Jeder Unterordner ist ein Stück.
   NOTEN_ORDNER: [
-    { id: "1x8tVwolO0y1TMN0oCD0Fid6dVHDAsOIk", name: "Noten (musikzugtvs1)" },
-    { id: "1RRCxuh4ViIX06kJ63JLJKSNgS7sLm2eq", name: "Noten (musikzugtvs2)" },
+    { id: "1x8tVwolO0y1TMN0oCD0Fid6dVHDAsOIk", name: "Noten 1" },
+    { id: "1RRCxuh4ViIX06kJ63JLJKSNgS7sLm2eq", name: "Noten 2" },
   ],
 };

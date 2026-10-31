@@ -3,7 +3,7 @@
 Damit sich Musikerinnen und Musiker in der App mit Google anmelden können, braucht die App eine
 **Client-ID** von Google. Die gibt es kostenlos in der Google Cloud Console. Das muss nur **einmal** gemacht werden.
 
-> **Tipp:** Am besten mit einem Vereinskonto (z. B. `musikzugtvs1@gmail.com`) einrichten,
+> **Tipp:** Am besten mit einem Vereinskonto (z. B. dem Konto, dem die Noten-Ordner gehören) einrichten,
 > damit die Einrichtung nicht an einer einzelnen Person hängt.
 
 ## 1. Projekt anlegen
