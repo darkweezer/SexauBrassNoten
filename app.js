@@ -363,8 +363,7 @@ function renderSongs() {
 }
 
 function renderOffline() {
-  const entries = [...state.offline.values()].sort((a, b) =>
-    a.title.localeCompare(b.title, "de") || a.voice.localeCompare(b.voice, "de", { numeric: true }));
+  const entries = [...state.offline.values()];
   const totalBytes = entries.reduce((sum, e) => sum + (e.size || 0), 0);
 
   $("#offline-empty").classList.toggle("hidden", entries.length > 0);
@@ -372,17 +371,41 @@ function renderOffline() {
     `${entries.length} von ${MAX_OFFLINE_FILES} PDFs gespeichert · ${formatBytes(totalBytes)} belegt`;
   $("#storage-bar").style.width = `${Math.min(100, (entries.length / MAX_OFFLINE_FILES) * 100)}%`;
 
-  $("#offline-list").innerHTML = entries.map((e) => `
-    <li class="song">
-      <div>
-        <div class="song-title">${escapeHtml(e.title)}</div>
-        <div class="song-meta">${escapeHtml(e.voice)} · ${formatBytes(e.size)}</div>
-      </div>
-      <div class="song-actions">
-        <button class="btn" data-open="${escapeHtml(e.id)}" type="button">Öffnen</button>
-        <button class="btn danger" data-remove="${escapeHtml(e.id)}" type="button">Vom Gerät entfernen</button>
-      </div>
-    </li>`).join("");
+  // Stimmen desselben Stücks in einem Kasten zusammenfassen, wie bei „Noten“
+  const groups = new Map();
+  for (const e of entries) {
+    const key = e.songId ?? e.title;
+    if (!groups.has(key)) {
+      const song = state.songs.find((s) => s.id === e.songId);
+      groups.set(key, { songId: e.songId, title: song?.title ?? e.title, number: e.number ?? song?.number ?? null, files: [] });
+    }
+    groups.get(key).files.push(e);
+  }
+  const sorted = [...groups.values()].sort((a, b) =>
+    (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"));
+
+  $("#offline-list").innerHTML = sorted.map((g) => {
+    const size = g.files.reduce((sum, e) => sum + (e.size || 0), 0);
+    const number = g.number != null ? `<span class="song-number">${g.number}</span> ` : "";
+    const files = g.files.sort((a, b) => a.voice.localeCompare(b.voice, "de", { numeric: true }));
+    return `
+      <li class="song">
+        <div>
+          <div class="song-title">${number}${escapeHtml(g.title)}</div>
+          <div class="song-meta">${files.length === 1 ? "1 Stimme" : `${files.length} Stimmen`} · ${formatBytes(size)}</div>
+        </div>
+        <div class="voices">
+          ${files.map((e) => `
+            <span class="chip-group">
+              <button class="voice-chip" data-open="${escapeHtml(e.id)}" type="button">${escapeHtml(e.voice)}</button>
+              <button class="chip-x" data-remove="${escapeHtml(e.id)}" type="button" aria-label="${escapeHtml(e.voice)} vom Gerät entfernen">×</button>
+            </span>`).join("")}
+        </div>
+        <div class="song-actions">
+          <button class="btn danger small" data-remove-group="${escapeHtml(files.map((e) => e.id).join(","))}" type="button">Ganzes Stück vom Gerät entfernen</button>
+        </div>
+      </li>`;
+  }).join("");
 }
 
 // ---------- Aktionen ----------
@@ -480,8 +503,17 @@ function bindEvents() {
       const instrument = $("#voice-filter").value;
       if (song) {
         const files = song.files.filter((f) => !instrument || fileHas(f, instrument));
-        return saveFiles(files.map((f) => ({ id: f.id, songId: song.id, voice: f.voice, title: song.title })), saveBtn);
+        return saveFiles(files.map((f) => ({ id: f.id, songId: song.id, number: song.number, voice: f.voice, title: song.title })), saveBtn);
       }
+    }
+
+    const removeGroup = event.target.closest("[data-remove-group]");
+    if (removeGroup) {
+      for (const id of removeGroup.dataset.removeGroup.split(",")) await removePdf(id);
+      toast("Stück vom Gerät entfernt");
+      renderOffline();
+      renderSongs();
+      return;
     }
 
     const removeBtn = event.target.closest("[data-remove]");
