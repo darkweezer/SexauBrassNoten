@@ -1,0 +1,228 @@
+// Notenarchiv – Google-Anmeldung und Zugriff auf Google Drive
+//
+// Ablauf:
+// 1. Die Person meldet sich mit Google an (Google Identity Services, nur im Browser).
+// 2. Google gibt ein Zugriffs-Token zurück (gilt ca. 1 Stunde, nur Lesen).
+// 3. Mit dem Token werden beide Noten-Ordner ausgelesen und PDFs geladen.
+//
+// Es gibt keinen eigenen Server. Wer die Drive-Ordner sehen darf, sieht die Noten.
+
+const SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+const API = "https://www.googleapis.com/drive/v3/files";
+const FOLDER_MIME = "application/vnd.google-apps.folder";
+
+let tokenClient = null;
+let accessToken = null;
+let tokenExpiresAt = 0;
+let pendingToken = null;
+
+// ---------- Anmeldung ----------
+
+function loadGoogleScript() {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Google-Anmeldung konnte nicht geladen werden. Besteht eine Internetverbindung?"));
+    document.head.append(s);
+  });
+}
+
+export async function initAuth(clientId) {
+  await loadGoogleScript();
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: SCOPE,
+    callback: () => {}, // wird pro Anfrage gesetzt
+  });
+}
+
+export function isSignedIn() {
+  return Boolean(accessToken) && Date.now() < tokenExpiresAt;
+}
+
+/**
+ * Fordert ein Token an. Muss beim ersten Mal direkt aus einem Klick heraus
+ * aufgerufen werden, sonst blockiert der Browser das Google-Fenster.
+ * interactive=false versucht es still (ohne Fenster), falls schon einmal zugestimmt wurde.
+ */
+export function signIn({ interactive = true } = {}) {
+  if (!tokenClient) return Promise.reject(new Error("Anmeldung ist noch nicht bereit."));
+  if (pendingToken) return pendingToken;
+  pendingToken = new Promise((resolve, reject) => {
+    tokenClient.callback = (resp) => {
+      pendingToken = null;
+      if (resp.error) return reject(new Error(loginErrorText(resp.error)));
+      accessToken = resp.access_token;
+      // eine Minute Puffer, damit das Token nicht mitten im Download abläuft
+      tokenExpiresAt = Date.now() + (Number(resp.expires_in) - 60) * 1000;
+      try { localStorage.setItem("notenarchiv.angemeldet", "1"); } catch {}
+      resolve();
+    };
+    tokenClient.error_callback = (err) => {
+      pendingToken = null;
+      reject(new Error(err?.type === "popup_closed" ? "Anmeldung abgebrochen." : "Anmeldung nicht möglich."));
+    };
+    tokenClient.requestAccessToken({ prompt: interactive ? "" : "none" });
+  });
+  return pendingToken;
+}
+
+export function signOut() {
+  if (accessToken && window.google?.accounts?.oauth2) {
+    google.accounts.oauth2.revoke(accessToken, () => {});
+  }
+  accessToken = null;
+  tokenExpiresAt = 0;
+  try { localStorage.removeItem("notenarchiv.angemeldet"); } catch {}
+}
+
+export function wasSignedInBefore() {
+  try { return localStorage.getItem("notenarchiv.angemeldet") === "1"; } catch { return false; }
+}
+
+function loginErrorText(code) {
+  if (code === "access_denied") return "Zugriff verweigert. Bitte beim Notenwart freischalten lassen.";
+  return "Anmeldung nicht möglich. Bitte erneut versuchen.";
+}
+
+// ---------- Drive-Anfragen ----------
+
+export class NotLoggedInError extends Error {
+  constructor() { super("Bitte neu anmelden."); this.name = "NotLoggedInError"; }
+}
+
+async function driveFetch(url) {
+  if (!isSignedIn()) {
+    // still erneuern versuchen; klappt meist, wenn die Person schon zugestimmt hat
+    try { await signIn({ interactive: false }); } catch { throw new NotLoggedInError(); }
+  }
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (res.status === 401) { accessToken = null; throw new NotLoggedInError(); }
+  if (res.status === 403 || res.status === 404) {
+    throw new Error("Kein Zugriff auf diese Noten. Bitte beim Notenwart freischalten lassen.");
+  }
+  if (!res.ok) throw new Error(`Google Drive antwortet nicht (Fehler ${res.status}).`);
+  return res;
+}
+
+/** Holt alle Treffer einer Drive-Suche, Seite für Seite. */
+async function listAll(query, fields) {
+  const out = [];
+  let pageToken = "";
+  do {
+    const params = new URLSearchParams({
+      q: query,
+      fields: `nextPageToken, files(${fields})`,
+      pageSize: "1000",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const data = await (await driveFetch(`${API}?${params}`)).json();
+    out.push(...(data.files ?? []));
+    pageToken = data.nextPageToken ?? "";
+  } while (pageToken);
+  return out;
+}
+
+function inParents(ids) {
+  return "(" + ids.map((id) => `'${id.replace(/'/g, "\\'")}' in parents`).join(" or ") + ")";
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Liest beide Noten-Ordner aus und baut daraus die Stückliste.
+ * Ergebnis: [{ id, number, title, files: [{ id, name, voice, instrument, size }] }]
+ */
+export async function loadSongsFromDrive(rootFolders) {
+  // 1. Stück-Ordner in allen Wurzelordnern
+  const folders = await listAll(
+    `${inParents(rootFolders.map((r) => r.id))} and mimeType = '${FOLDER_MIME}' and trashed = false`,
+    "id, name",
+  );
+
+  // 2. PDFs in den Stück-Ordnern (in Gruppen, damit die Anfrage nicht zu lang wird)
+  const pdfs = [];
+  for (const group of chunk(folders.map((f) => f.id), 40)) {
+    pdfs.push(...await listAll(
+      `${inParents(group)} and mimeType = 'application/pdf' and trashed = false`,
+      "id, name, parents, size, modifiedTime",
+    ));
+  }
+
+  return buildSongs(folders, pdfs);
+}
+
+/** Lädt eine PDF-Datei als Blob. */
+export async function downloadPdf(fileId) {
+  const res = await driveFetch(`${API}/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`);
+  return res.blob();
+}
+
+// ---------- Namen auswerten ----------
+// Ordner:  "255_Nessaja"                    -> Nr. 255, Titel "Nessaja"
+// Datei:   "Nessaja_Altsax_1.pdf"           -> Stimme "Altsax 1", Instrument "Altsax"
+// Datei:   "273_Kings_of_Swing_Horn_1_F.pdf" -> Stimme "Horn 1 F", Instrument "Horn"
+
+export function parseFolderName(name) {
+  const m = String(name).trim().match(/^(\d+)[_\s-]+(.*)$/);
+  const number = m ? Number(m[1]) : null;
+  const rest = (m ? m[2] : name).replace(/_+/g, " ").trim();
+  return { number, title: rest || String(name) };
+}
+
+// Kleinbuchstaben, Umlaute ausschreiben (ö -> oe), damit "Dankeschön" und "Dankeschoen" passen
+const norm = (s) => s.toLowerCase()
+  .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+export function parseFileName(fileName, songTitle) {
+  const base = String(fileName).replace(/\.pdf$/i, "");
+  let tokens = base.split(/[_\s]+/).filter(Boolean);
+
+  // führende Stücknummer entfernen ("273_…")
+  if (tokens.length > 1 && /^\d+$/.test(tokens[0])) tokens = tokens.slice(1);
+
+  // Titelwörter am Anfang entfernen, wenn sie zum Ordnernamen passen
+  const titleTokens = String(songTitle).split(/[_\s]+/).filter(Boolean).map(norm);
+  let i = 0;
+  while (i < titleTokens.length && i < tokens.length - 1 && norm(tokens[i]) === titleTokens[i]) i++;
+  const voiceTokens = i > 0 ? tokens.slice(i) : tokens;
+
+  const voice = voiceTokens.join(" ") || base;
+  const instrument = (voiceTokens[0] ?? base).replace(/\d+$/, "") || voiceTokens[0] || base;
+  return { voice, instrument };
+}
+
+export function buildSongs(folders, pdfs) {
+  const byFolder = new Map();
+  for (const pdf of pdfs) {
+    for (const parent of pdf.parents ?? []) {
+      if (!byFolder.has(parent)) byFolder.set(parent, []);
+      byFolder.get(parent).push(pdf);
+    }
+  }
+
+  return folders
+    .map((folder) => {
+      const { number, title } = parseFolderName(folder.name);
+      const files = (byFolder.get(folder.id) ?? [])
+        .map((pdf) => ({
+          id: pdf.id,
+          name: pdf.name,
+          size: Number(pdf.size) || 0,
+          ...parseFileName(pdf.name, title),
+        }))
+        .sort((a, b) => a.voice.localeCompare(b.voice, "de", { numeric: true }));
+      return { id: folder.id, number, title, files };
+    })
+    .filter((song) => song.files.length > 0);
+}

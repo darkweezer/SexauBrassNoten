@@ -124,3 +124,21 @@ input[type="search"]:focus, select:focus, button:focus-visible {
   background: #222; color: #fff; padding: 12px 18px; border-radius: var(--radius);
   max-width: 90vw; text-align: center;
 }
+
+/* Anmeldung */
+.login-box {
+  background: var(--surface); border: 2px solid var(--accent); border-radius: var(--radius);
+  padding: 16px; margin-bottom: 16px; display: grid; gap: 10px;
+}
+.login-box p { margin: 0; }
+.btn.big { min-height: 56px; font-size: 1.1rem; }
+
+/* Stückliste */
+.song-number {
+  display: inline-block; min-width: 2.6em; color: var(--muted); font-weight: 600;
+}
+.all-voices summary {
+  cursor: pointer; color: var(--accent); font-weight: 600; min-height: 36px;
+  display: flex; align-items: center;
+}
+.all-voices .voices { margin-top: 6px; }

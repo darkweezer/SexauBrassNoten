@@ -24,15 +24,19 @@
   <main>
     <!-- Alle Noten -->
     <section id="view-search" class="view is-active" aria-label="Alle Noten">
+      <div id="login-box" class="login-box hidden">
+        <p>Bitte melden Sie sich mit Ihrem Google-Konto an, um die Noten aus Google Drive zu sehen.</p>
+        <button id="login-btn" class="btn big" type="button">Mit Google anmelden</button>
+      </div>
       <div class="toolbar">
         <label class="search">
           <span class="visually-hidden">Suche</span>
-          <input id="search" type="search" placeholder="Titel oder Komponist suchen" autocomplete="off" />
+          <input id="search" type="search" placeholder="Titel oder Nummer suchen" autocomplete="off" />
         </label>
         <label class="field">
-          <span>Meine Stimme</span>
+          <span>Mein Instrument</span>
           <select id="voice-filter">
-            <option value="">Alle Stimmen</option>
+            <option value="">Alle Instrumente</option>
           </select>
         </label>
       </div>
@@ -72,7 +76,13 @@
         <li>„Installieren“ wählen.</li>
       </ol>
       <h2>Noten offline speichern</h2>
-      <p>Bei einem Stück auf „Offline speichern“ tippen. Die Noten bleiben danach auch ohne Internet im Bereich „Offline“ verfügbar.</p>
+      <p>Oben unter „Mein Instrument“ das eigene Instrument wählen. Dann bei einem Stück auf „Meine Stimmen offline speichern“ tippen. Die Noten bleiben danach auch ohne Internet im Bereich „Offline“ verfügbar.</p>
+      <h2>Konto</h2>
+      <p>Neue Stücke erscheinen automatisch, sobald sie in Google Drive liegen.</p>
+      <div class="song-actions">
+        <button id="refresh-btn" class="btn secondary" type="button">Notenliste neu laden</button>
+        <button id="logout-btn" class="btn danger hidden" type="button">Abmelden</button>
+      </div>
     </section>
   </main>
 
