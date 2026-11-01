@@ -50,6 +50,10 @@
           </select>
         </label>
       </div>
+      <label id="inactive-toggle" class="check hidden">
+        <input type="checkbox" id="show-inactive" />
+        <span id="inactive-label">Auch nicht aktive Stücke zeigen</span>
+      </label>
       <label id="inactive-inst-toggle" class="check hidden">
         <input type="checkbox" id="show-inactive-inst" />
         <span id="inactive-inst-label">Auch nicht aktive Instrumente zeigen</span>
@@ -57,10 +61,6 @@
       <label id="only-offline-toggle" class="check">
         <input type="checkbox" id="only-offline" />
         <span id="only-offline-label">Nur offline gespeicherte</span>
-      </label>
-      <label id="inactive-toggle" class="check hidden">
-        <input type="checkbox" id="show-inactive" />
-        <span id="inactive-label">Auch nicht aktive Stücke zeigen</span>
       </label>
       <p id="result-count" class="hint" aria-live="polite"></p>
       <table id="song-table" class="admin-table song-table">
