@@ -1,4 +1,4 @@
-// Notenarchiv – Hauptlogik
+// NotenApp – Hauptlogik
 // Noten kommen live aus den zwei Google-Drive-Ordnern (siehe drive.js und config.js).
 // Offline-Kopien liegen in IndexedDB auf dem Gerät.
 

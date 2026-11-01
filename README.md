@@ -1,6 +1,6 @@
-# Notenarchiv (PWA)
+# NotenApp – Sexau Brass (PWA)
 
-Eine kleine Webanwendung, mit der die Mitglieder des Musikzugs Notenblätter (PDF) finden, öffnen und für die Offline-Nutzung auf dem eigenen Gerät speichern können.
+Eine kleine Webanwendung, mit der die Mitglieder von Sexau Brass (ehemals Musikzug) Notenblätter (PDF) finden, öffnen und für die Offline-Nutzung auf dem eigenen Gerät speichern können.
 
 ## Anforderungen (Stand: Vorgespräch)
 

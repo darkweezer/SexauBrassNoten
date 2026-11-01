@@ -1,4 +1,4 @@
-// Notenarchiv – Instrumente aus Dateinamen erkennen und zusammenfassen
+// NotenApp – Instrumente aus Dateinamen erkennen und zusammenfassen
 //
 // In den Drives heißen dieselben Instrumente sehr unterschiedlich, z. B.
 // "Trp", "Trompete" und "Trumpet". Diese Liste fasst sie unter einem Namen zusammen.

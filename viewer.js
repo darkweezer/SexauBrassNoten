@@ -1,4 +1,4 @@
-// Notenarchiv – eingebauter PDF-Betrachter
+// NotenApp – eingebauter PDF-Betrachter
 //
 // Zeigt eine oder mehrere PDFs (z. B. "Seite 1" und "Seite 2" einer Stimme) als durchgehende Seitenfolge.
 // Blättern: wischen, links/rechts auf den Rand tippen, Pfeiltasten oder Bluetooth-Fußpedal (Bild-ab/Leertaste).

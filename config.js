@@ -1,4 +1,4 @@
-// Notenarchiv – Einstellungen
+// NotenApp – Einstellungen
 // Hier stehen KEINE Passwörter. Die Client-ID ist öffentlich und darf im Code stehen.
 
 export const CONFIG = {

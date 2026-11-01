@@ -11,7 +11,7 @@ Damit sich Musikerinnen und Musiker in der App mit Google anmelden können, brau
 1. <https://console.cloud.google.com> öffnen und mit dem Google-Konto anmelden.
 2. Beim ersten Mal den Nutzungsbedingungen zustimmen.
 3. Oben links auf die Projektauswahl klicken → **Neues Projekt**.
-4. Name: `Notenarchiv` → **Erstellen**. Danach sicherstellen, dass oben „Notenarchiv“ ausgewählt ist.
+4. Name: `NotenApp` → **Erstellen**. Danach sicherstellen, dass oben „NotenApp“ ausgewählt ist.
 
 ## 2. Google Drive API einschalten
 
@@ -21,7 +21,7 @@ Damit sich Musikerinnen und Musiker in der App mit Google anmelden können, brau
 ## 3. Anmeldebildschirm einrichten
 
 1. Im Suchfeld **Google Auth Platform** eingeben und öffnen → **Jetzt starten**.
-2. **App-Informationen:** App-Name `Notenarchiv`, Support-E-Mail auswählen → **Weiter**.
+2. **App-Informationen:** App-Name `NotenApp`, Support-E-Mail auswählen → **Weiter**.
 3. **Zielgruppe:** **Extern** wählen → **Weiter**.
 4. **Kontaktdaten:** eigene E-Mail eintragen → **Weiter**, zustimmen → **Erstellen**.
 
@@ -53,7 +53,7 @@ Person entfernen = an beiden Stellen wieder austragen.
 ## 6. Client-ID erstellen
 
 1. Links auf **Clients** → **Client erstellen**.
-2. Anwendungstyp: **Webanwendung**, Name: `Notenarchiv Web`.
+2. Anwendungstyp: **Webanwendung**, Name: `NotenApp Web`.
 3. Unter **Autorisierte JavaScript-Quellen** zwei Einträge hinzufügen:
    - `https://darkweezer.github.io` (Adresse der App bei GitHub Pages, ohne Schrägstrich am Ende)
    - `http://localhost:8000`

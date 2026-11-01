@@ -1,4 +1,4 @@
-// Notenarchiv – Google-Anmeldung und Zugriff auf Google Drive
+// NotenApp – Google-Anmeldung und Zugriff auf Google Drive
 //
 // Ablauf:
 // 1. Die Person meldet sich mit Google an (Google Identity Services, nur im Browser).
