@@ -10,7 +10,7 @@ import {
 } from "./drive.js";
 import { INSTRUMENT_ORDER, SONSTIGE, findInstruments, isCollectionTitle } from "./instruments.js";
 import { openViewer } from "./viewer.js";
-import { fullLabels } from "./labels.js";
+import { labelVariants } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
 const DB_NAME = "notenarchiv";
@@ -456,11 +456,12 @@ let labelCacheFor = null;
 function labelsForFiles(files, title) {
   const bases = [...new Set(files.map((f) => voiceBase(f.voice)))];
   const isCollection = isCollectionTitle(title);
-  const m = fullLabels(bases, { keepOriginal: isCollection });
-  for (const f of files) labelCache.set(f.id, m.get(voiceBase(f.voice)) ?? f.voice);
+  const m = labelVariants(bases, { keepOriginal: isCollection });
+  for (const f of files) labelCache.set(f.id, m.get(voiceBase(f.voice)) ?? [{ label: f.voice, instrument: null }]);
 }
 
-function displayLabel(f) {
+// Alle Bezeichnungen einer Datei (mehrere bei Stimmen für mehrere Instrumente)
+function displayVariants(f) {
   if (labelCacheFor !== state.songs) {
     labelCache = new Map();
     labelCacheFor = state.songs;
@@ -472,24 +473,37 @@ function displayLabel(f) {
     const same = e ? [...state.offline.values()].filter((x) => (x.songId ?? x.title) === (e.songId ?? e.title)) : [f];
     labelsForFiles(same, e?.title);
   }
-  return labelCache.get(f.id) ?? voiceBase(f.voice);
+  return labelCache.get(f.id) ?? [{ label: voiceBase(f.voice), instrument: null }];
 }
 
-function groupVoices(files) {
+const displayLabel = (f) => displayVariants(f).map((v) => v.label).join(" / ");
+
+function groupVoices(files, all = false) {
   const groups = new Map();
   for (const f of files) {
     const key = voiceBase(f.voice);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(f);
   }
-  return [...groups].map(([, list]) => {
+  // Stimme für mehrere Instrumente: je Instrument ein eigener Knopf mit demselben Ziel.
+  // Ist oben ein Instrument gewählt, nur der Knopf für dieses Instrument.
+  const selected = all ? "" : document.querySelector("#voice-filter")?.value ?? "";
+  const out = [];
+  for (const [, list] of groups) {
     list.sort((a, b) => voicePage(a.voice) - voicePage(b.voice));
-    return { label: displayLabel(list[0]), first: list[0], files: list, offline: list.every((f) => state.offline.has(f.id)) };
-  }).sort((a, b) => a.label.localeCompare(b.label, "de", { numeric: true }));
+    const offline = list.every((f) => state.offline.has(f.id));
+    let variants = displayVariants(list[0]);
+    if (selected && variants.length > 1) {
+      const mine = variants.filter((v) => v.instrument === selected);
+      if (mine.length) variants = mine;
+    }
+    for (const v of variants) out.push({ label: v.label, first: list[0], files: list, offline });
+  }
+  return out.sort((a, b) => a.label.localeCompare(b.label, "de", { numeric: true }));
 }
 
-function voiceChips(files, cls = "voice-chip", labelFn = (g) => g.label) {
-  return groupVoices(files).map((g) =>
+function voiceChips(files, cls = "voice-chip", labelFn = (g) => g.label, all = false) {
+  return groupVoices(files, all).map((g) =>
     `<button class="${cls}" data-open="${escapeHtml(g.first.id)}" type="button" title="${escapeHtml(g.label)}${g.files.length > 1 ? ` (${g.files.length} Seiten)` : ""}">${escapeHtml(labelFn(g))}${g.offline ? " ✓" : ""}</button>`
   ).join("");
 }
@@ -582,7 +596,7 @@ function renderSongs() {
     const busy = state.saving.get(song.id);
     const open = state.expanded.has(song.id);
 
-    const nVoices = groupVoices(song.files).length;
+    const nVoices = new Set(song.files.map((f) => voiceBase(f.voice))).size;
     let meta = filtering ? groupVoices(target).map((g) => g.label).join(" · ") : `${nVoices} ${nVoices === 1 ? "Stimme" : "Stimmen"}`;
     if (busy) meta = busy;
     else if (offAll && !on) meta += ` · ${offAll} offline`;
@@ -614,10 +628,10 @@ function renderSongs() {
         <td></td>
         <td colspan="2">
           <div class="voices">${chips(target)}</div>
-          ${filtering && !song.orphan && groupVoices(target).length < groupVoices(song.files).length ? `
+          ${filtering && !song.orphan && target.length < song.files.length ? `
             <details class="all-voices">
-              <summary>Alle Stimmen (${groupVoices(song.files).length})</summary>
-              <div class="voices">${chips(song.files)}</div>
+              <summary>Alle Stimmen (${nVoices})</summary>
+              <div class="voices">${voiceChips(song.files, "voice-chip", (g) => g.label, true)}</div>
             </details>` : ""}
         </td>
       </tr>` : ""}`;

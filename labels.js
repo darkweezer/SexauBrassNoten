@@ -43,7 +43,7 @@ const EXTRA_NAMES = { arr: "arrangiert", arrangiert: "arrangiert", alt: "alterna
 export function parseVoice(base) {
   const raw = String(base).replace(/\(S\.\d+\)/g, " ").replace(/([a-zäöü])(\d)/gi, "$1 $2").replace(/(\d)(in|arr)/gi, "$1 $2").trim();
   let tokens = raw.split(/[\s_\-\/,+]+/).filter(Boolean);
-  const out = { names: [], nums: [], pitch: null, part: null, solo: false, extras: [] };
+  const out = { names: [], canon: [], nums: [], pitch: null, part: null, solo: false, extras: [] };
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     const low = t.toLowerCase();
@@ -78,14 +78,18 @@ export function parseVoice(base) {
       const key = pair ? (t + tokens[i]).toLowerCase() : hit.key;
       if (/^solo/i.test(t)) out.solo = true;
       const name = SPECIFIC[key] ?? SPECIFIC[hit.key] ?? NICE[hit.name] ?? hit.name;
-      if (!out.names.includes(name)) out.names.push(name);
+      if (!out.names.includes(name)) { out.names.push(name); out.canon.push(hit.name); }
       continue;
     }
     if (NOISE.test(t) || /^\d{3,}$/.test(t)) continue;
     out.extras.push(EXTRA_NAMES[low] ?? t);
   }
   // "Stimme" neben einem echten Instrument weglassen
-  if (out.names.length > 1) out.names = out.names.filter((n) => n !== "Stimme" && n !== "Begleitung");
+  if (out.names.length > 1) {
+    const keep = out.names.map((n) => n !== "Stimme" && n !== "Begleitung");
+    out.names = out.names.filter((_, i) => keep[i]);
+    out.canon = out.canon.filter((_, i) => keep[i]);
+  }
   return out;
 }
 
@@ -96,6 +100,30 @@ function compose(p, withPitch) {
   if (p.part) s += ` · ${p.part}`;
   if (p.extras.length) s += ` (${p.extras.join(" ")})`;
   return s.trim();
+}
+
+/**
+ * Wie fullLabels, aber bei Stimmen für mehrere Instrumente ("Trompete / Flügelhorn") je Instrument ein Eintrag.
+ * @returns {Map<string, {label:string, instrument:string|null}[]>}
+ */
+export function labelVariants(bases, options = {}) {
+  const joined = fullLabels(bases, options);
+  const out = new Map();
+  for (const b of bases) {
+    const label = joined.get(b);
+    const p = parseVoice(b);
+    if (options.keepOriginal || p.names.length < 2 || label.includes(" (" + b + ")")) {
+      out.set(b, [{ label, instrument: p.canon[0] ?? null }]);
+      continue;
+    }
+    // Stimmung genauso wie im zusammengesetzten Namen zeigen
+    const withPitch = p.pitch != null && label.includes(` in ${p.pitch}`);
+    out.set(b, p.names.map((name, i) => ({
+      label: compose({ ...p, names: [name] }, withPitch),
+      instrument: p.canon[i],
+    })));
+  }
+  return out;
 }
 
 /**
