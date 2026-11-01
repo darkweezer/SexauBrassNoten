@@ -235,7 +235,7 @@ input[type="search"]:focus, select:focus, button:focus-visible, summary:focus-vi
 .song-table { table-layout: fixed; }
 .song-table th.num, .song-table td.num { width: 3.2em; padding-right: 4px; }
 .song-table th.switch-cell, .song-table td.switch-cell { width: 76px; }
-.song-table .song-name { overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; }
+.song-table .song-name { overflow-wrap: break-word; hyphens: manual; }
 .song-table .voice-chip.quick { min-height: 34px; padding: 3px 10px; font-size: 0.85rem; }
 
 /* Eingebauter PDF-Betrachter */
@@ -384,3 +384,10 @@ body.viewer-open { overflow: hidden; }
 .assign-preview { background: #fff; border-radius: 6px; overflow: hidden; min-height: 40px; display: grid; place-items: center; }
 .assign-preview img { display: block; width: 100%; height: auto; }
 .assign-preview .hint { color: #666; margin: 8px; font-size: 0.85rem; }
+/* Fortschrittsbalken im Knopf „Alle herunterladen“ */
+.save-all.is-progress {
+  opacity: 1; cursor: progress; color: var(--accent-ink); border-color: var(--accent);
+  background: linear-gradient(to right, var(--accent) var(--progress, 0%), var(--surface-2) var(--progress, 0%));
+  transition: background 0.2s;
+}
+.save-all.is-progress { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.6); }

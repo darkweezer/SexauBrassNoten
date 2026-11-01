@@ -937,13 +937,16 @@ async function saveAllVisible() {
   const btn = $("#save-all-btn");
   state.bulkSaving = true;
   btn.disabled = true;
+  btn.classList.add("is-progress");
+  btn.style.setProperty("--progress", "0%");
   let done = 0;
   try {
     for (const file of jobs) {
-      btn.textContent = `Lade ${done + 1} von ${jobs.length} …`;
+      btn.textContent = `Lade ${done + 1} von ${jobs.length} … ${Math.round((done / jobs.length) * 100)} %`;
       const blob = await downloadPdf(file.id);
       await savePdf(file, blob);
       done++;
+      btn.style.setProperty("--progress", `${Math.round((done / jobs.length) * 100)}%`);
       if (done % 5 === 0) renderSongs();
     }
     toast(`${done} ${done === 1 ? "Datei" : "Dateien"} offline gespeichert`);
@@ -952,6 +955,8 @@ async function saveAllVisible() {
     handleError(err);
   } finally {
     state.bulkSaving = false;
+    btn.classList.remove("is-progress");
+    btn.style.removeProperty("--progress");
     renderSongs();
     updateStorageEstimate();
   }
