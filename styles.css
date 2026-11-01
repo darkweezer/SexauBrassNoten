@@ -203,3 +203,12 @@ input[type="search"]:focus, select:focus, button:focus-visible, summary:focus-vi
   font: inherit; font-size: 1.1rem; line-height: 1; cursor: pointer;
 }
 .chip-x:hover { color: var(--danger); border-color: var(--danger); }
+
+/* Umschalter Stücke / Instrumente in der Verwaltung */
+.segmented { display: flex; gap: 0; margin: 4px 0 12px; border: 1px solid var(--accent); border-radius: var(--radius); overflow: hidden; }
+.segmented button {
+  flex: 1; min-height: var(--tap); border: 0; background: transparent; color: var(--accent);
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+.segmented button + button { border-left: 1px solid var(--accent); }
+.segmented button.is-active { background: var(--accent); color: var(--accent-ink); }

@@ -27,7 +27,9 @@ const state = {
   statusInfo: null,   // { geaendert, von }
   email: "",
   isAdmin: false,
-  draft: null,        // Verwaltung: noch nicht gespeicherte Änderungen (Set)
+  instInaktiv: new Set(), // Instrumente, die gerade nicht besetzt sind
+  draft: null,        // Verwaltung: noch nicht gespeicherte Änderungen { stuecke: Set, instrumente: Set }
+  adminMode: "stuecke",
 };
 
 // ---------- Hilfsfunktionen ----------
@@ -154,25 +156,32 @@ function loadCachedStatus() {
   try {
     const data = JSON.parse(lsGet(LS_STATUS) ?? "null");
     if (Array.isArray(data?.inaktiv)) state.inaktiv = new Set(data.inaktiv);
+    if (Array.isArray(data?.instrumenteInaktiv)) state.instInaktiv = new Set(data.instrumenteInaktiv);
   } catch {}
+}
+
+function cacheStatus() {
+  lsSet(LS_STATUS, JSON.stringify({ inaktiv: [...state.inaktiv], instrumenteInaktiv: [...state.instInaktiv] }));
 }
 
 async function refreshStatus() {
   try {
     const status = await loadStatus(CONFIG.STATUS_DATEI);
     // Entwurf in der Verwaltung nur verwerfen, wenn dort nichts ungespeichert ist
-    if (state.draft && sameSet(state.draft, state.inaktiv)) state.draft = null;
+    if (state.draft && !draftChanged()) state.draft = null;
     state.inaktiv = new Set(status.inaktiv);
+    state.instInaktiv = new Set(status.instrumenteInaktiv);
     state.statusFileId = status.fileId;
     state.statusInfo = status.geaendert ? { geaendert: status.geaendert, von: status.von } : null;
-    lsSet(LS_STATUS, JSON.stringify({ inaktiv: status.inaktiv }));
+    cacheStatus();
   } catch (err) {
     if (err instanceof NotLoggedInError) throw err;
-    // ohne Status-Datei sind einfach alle Stücke aktiv
+    // ohne Status-Datei ist einfach alles aktiv
   }
 }
 
 const isActive = (song) => !state.inaktiv.has(song.id);
+const isInstrumentActive = (name) => !state.instInaktiv.has(name);
 
 async function checkAdmin() {
   try {
@@ -185,42 +194,97 @@ async function checkAdmin() {
 }
 
 // ---------- Verwaltung ----------
+// Zwei Seiten im Reiter „Verwaltung“: Stücke und Instrumente. Gespeichert wird beides zusammen.
+
+const instrumentRank = (name) => { const i = INSTRUMENT_ORDER.indexOf(name); return i < 0 ? 999 : i; };
+
+function allInstruments() {
+  const counts = new Map();
+  for (const s of state.songs) {
+    const inSong = new Set();
+    for (const f of s.files) for (const i of fileInstruments(f)) inSong.add(i);
+    for (const i of inSong) counts.set(i, (counts.get(i) ?? 0) + 1);
+  }
+  return [...counts].map(([name, songs]) => ({ name, songs }))
+    .sort((a, b) => instrumentRank(a.name) - instrumentRank(b.name) || a.name.localeCompare(b.name, "de"));
+}
+
+function ensureDraft() {
+  if (!state.draft) state.draft = { stuecke: new Set(state.inaktiv), instrumente: new Set(state.instInaktiv) };
+  return state.draft;
+}
+
+function draftChanged() {
+  const d = state.draft;
+  return Boolean(d) && (!sameSet(d.stuecke, state.inaktiv) || !sameSet(d.instrumente, state.instInaktiv));
+}
+
+function adminItems() {
+  if (state.adminMode === "instrumente") {
+    return allInstruments().map((i) => ({ key: i.name, num: "", label: i.name, meta: `in ${i.songs} ${i.songs === 1 ? "Stück" : "Stücken"}` }));
+  }
+  return [...state.songs]
+    .sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"))
+    .map((s) => ({ key: s.id, num: s.number ?? "–", label: s.title, meta: `${s.files.length} Dateien`, song: s }));
+}
 
 function renderAdmin() {
-  if (!state.draft) state.draft = new Set(state.inaktiv);
-  const query = $("#admin-search").value.trim();
+  const draft = ensureDraft();
+  const isInst = state.adminMode === "instrumente";
+  const set = isInst ? draft.instrumente : draft.stuecke;
+  const query = $("#admin-search").value.trim().toLowerCase();
   const filter = $("#admin-filter").value;
-  const songs = [...state.songs]
-    .sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"))
-    .filter((s) => matchesSearch(s, query))
-    .filter((s) => filter === "alle" || (filter === "aktiv") === !state.draft.has(s.id));
 
-  const activeCount = state.songs.filter((s) => !state.draft.has(s.id)).length;
-  $("#admin-count").textContent = `${activeCount} von ${state.songs.length} Stücken aktiv`;
+  document.querySelectorAll("[data-admin-mode]").forEach((b) =>
+    b.classList.toggle("is-active", b.dataset.adminMode === state.adminMode));
+  $("#admin-title").textContent = isInst ? "Instrumente verwalten" : "Stücke verwalten";
+  $("#admin-intro").textContent = isInst
+    ? "Nicht aktive Instrumente verschwinden aus der Auswahl „Mein Instrument“, z. B. weil sie gerade niemand spielt. Mit einem Haken lassen sie sich wieder einblenden."
+    : "Hier legst du fest, welche Stücke gerade gespielt werden. Nicht aktive Stücke sind für alle ausgeblendet, bleiben aber in Drive erhalten.";
+  $("#admin-search").placeholder = isInst ? "Instrument suchen" : "Titel oder Nummer suchen";
+  $("#admin-filter").options[0].textContent = isInst ? "Alle Instrumente" : "Alle Stücke";
+  $("#admin-col-num").classList.toggle("hidden", isInst);
+  $("#admin-col-label").textContent = isInst ? "Instrument" : "Stück";
 
-  const changed = !sameSet(state.draft, state.inaktiv);
+  const all = adminItems();
+  const items = all
+    .filter((it) => !query || (it.song ? matchesSearch(it.song, query) : it.label.toLowerCase().includes(query)))
+    .filter((it) => filter === "alle" || (filter === "aktiv") === !set.has(it.key));
+
+  const activeCount = all.filter((it) => !set.has(it.key)).length;
+  $("#admin-count").textContent = `${activeCount} von ${all.length} ${isInst ? "Instrumenten" : "Stücken"} aktiv`;
+
+  const changed = draftChanged();
   $("#admin-save").disabled = !changed;
   $("#admin-unsaved").classList.toggle("hidden", !changed);
   const info = state.statusInfo;
   $("#admin-info").textContent = info
     ? `Zuletzt gespeichert am ${new Date(info.geaendert).toLocaleString("de-DE")} von ${info.von}`
-    : "Noch nichts gespeichert: Alle Stücke gelten als aktiv.";
+    : "Noch nichts gespeichert: Alles gilt als aktiv.";
 
-  $("#admin-list").innerHTML = songs.map((s) => {
-    const active = !state.draft.has(s.id);
+  $("#admin-list").innerHTML = items.map((it) => {
+    const active = !set.has(it.key);
     return `
       <tr class="${active ? "" : "is-inactive"}">
-        <td class="num">${s.number ?? "–"}</td>
-        <td>${escapeHtml(s.title)}<span class="admin-meta">${s.files.length} Dateien</span></td>
+        ${isInst ? "" : `<td class="num">${it.num}</td>`}
+        <td>${escapeHtml(it.label)}<span class="admin-meta">${escapeHtml(it.meta)}</span></td>
         <td class="switch-cell">
           <label class="switch">
-            <input type="checkbox" data-toggle-song="${escapeHtml(s.id)}" ${active ? "checked" : ""} />
+            <input type="checkbox" data-toggle-key="${escapeHtml(it.key)}" ${active ? "checked" : ""} />
             <span class="slider" aria-hidden="true"></span>
-            <span class="visually-hidden">${escapeHtml(s.title)} aktiv</span>
+            <span class="visually-hidden">${escapeHtml(it.label)} aktiv</span>
           </label>
         </td>
       </tr>`;
-  }).join("") || `<tr><td colspan="3" class="hint">Keine Stücke gefunden.</td></tr>`;
+  }).join("") || `<tr><td colspan="3" class="hint">Nichts gefunden.</td></tr>`;
+}
+
+function setAll(active) {
+  const draft = ensureDraft();
+  const keys = adminItems().map((it) => it.key);
+  if (state.adminMode === "instrumente") draft.instrumente = active ? new Set() : new Set(keys);
+  else draft.stuecke = active ? new Set() : new Set(keys);
+  renderAdmin();
 }
 
 function sameSet(a, b) {
@@ -234,12 +298,18 @@ async function saveAdmin(button) {
   try {
     // Schreibrecht nur für Dateien dieser App; beim ersten Mal fragt Google nach
     if (!canWrite()) await signIn({ interactive: true, withWrite: true });
-    const inaktiv = [...state.draft];
-    state.statusFileId = await saveStatus({ ...CONFIG.STATUS_DATEI, fileId: state.statusFileId, inaktiv, von: state.email });
+    const draft = ensureDraft();
+    const inaktiv = [...draft.stuecke];
+    const instrumenteInaktiv = [...draft.instrumente];
+    state.statusFileId = await saveStatus({
+      ...CONFIG.STATUS_DATEI, fileId: state.statusFileId, inaktiv, instrumenteInaktiv, von: state.email,
+    });
     state.inaktiv = new Set(inaktiv);
+    state.instInaktiv = new Set(instrumenteInaktiv);
     state.statusInfo = { geaendert: new Date().toISOString(), von: state.email };
-    lsSet(LS_STATUS, JSON.stringify({ inaktiv }));
+    cacheStatus();
     toast("Gespeichert. Alle sehen die Änderung beim nächsten Öffnen.");
+    populateInstrumentFilter();
     renderSongs();
   } catch (err) {
     handleError(err);
@@ -290,19 +360,25 @@ function showView(name) {
 }
 
 function populateInstrumentFilter() {
-  const instruments = new Set();
-  state.songs.forEach((s) => s.files.forEach((f) => fileInstruments(f).forEach((i) => instruments.add(i))));
+  const showInactive = $("#show-inactive-inst").checked;
+  const all = allInstruments().map((i) => i.name);
+  const visible = all.filter((name) => showInactive || isInstrumentActive(name));
+  const hidden = all.length - visible.length;
+  $("#inactive-inst-toggle").classList.toggle("hidden", all.every(isInstrumentActive));
+  const n = all.filter((name) => !isInstrumentActive(name)).length;
+  $("#inactive-inst-label").textContent = n === 1 ? "Auch 1 nicht aktives Instrument zeigen" : `Auch ${n} nicht aktive Instrumente zeigen`;
+
   const select = $("#voice-filter");
   const current = select.value || lsGet(LS_INSTRUMENT) || "";
   select.innerHTML = `<option value="">Alle Instrumente</option>`;
-  const rank = (name) => { const i = INSTRUMENT_ORDER.indexOf(name); return i < 0 ? 999 : i; };
-  [...instruments].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, "de")).forEach((v) => {
+  for (const name of visible) {
     const opt = document.createElement("option");
-    opt.value = v;
-    opt.textContent = v;
+    opt.value = name;
+    opt.textContent = isInstrumentActive(name) ? name : `${name} (nicht aktiv)`;
     select.append(opt);
-  });
-  select.value = instruments.has(current) ? current : "";
+  }
+  select.value = visible.includes(current) ? current : "";
+  return hidden;
 }
 
 function matchesSearch(song, query) {
@@ -329,7 +405,7 @@ function renderSongs() {
 
   const hiddenCount = state.songs.filter((s) => !isActive(s)).length;
   $("#inactive-toggle").classList.toggle("hidden", hiddenCount === 0);
-  $("#inactive-label").textContent = `Auch ${hiddenCount} nicht aktive Stücke zeigen`;
+  $("#inactive-label").textContent = hiddenCount === 1 ? "Auch 1 nicht aktives Stück zeigen" : `Auch ${hiddenCount} nicht aktive Stücke zeigen`;
 
   if (!state.loading) {
     $("#result-count").textContent = state.songs.length === 0
@@ -467,16 +543,25 @@ function bindEvents() {
   $("#admin-search").addEventListener("input", renderAdmin);
   $("#admin-filter").addEventListener("change", renderAdmin);
   $("#admin-save").addEventListener("click", (e) => saveAdmin(e.currentTarget));
-  $("#admin-reset").addEventListener("click", () => { state.draft = new Set(state.inaktiv); renderAdmin(); });
-  $("#admin-all-on").addEventListener("click", () => { state.draft = new Set(); renderAdmin(); });
-  $("#admin-all-off").addEventListener("click", () => { state.draft = new Set(state.songs.map((s) => s.id)); renderAdmin(); });
+  $("#admin-reset").addEventListener("click", () => { state.draft = null; renderAdmin(); });
+  $("#admin-all-on").addEventListener("click", () => setAll(true));
+  $("#admin-all-off").addEventListener("click", () => setAll(false));
+  document.querySelectorAll("[data-admin-mode]").forEach((b) => b.addEventListener("click", () => {
+    state.adminMode = b.dataset.adminMode;
+    $("#admin-search").value = "";
+    $("#admin-filter").value = "alle";
+    renderAdmin();
+  }));
   $("#admin-list").addEventListener("change", (e) => {
-    const box = e.target.closest("[data-toggle-song]");
+    const box = e.target.closest("[data-toggle-key]");
     if (!box) return;
-    if (box.checked) state.draft.delete(box.dataset.toggleSong);
-    else state.draft.add(box.dataset.toggleSong);
+    const draft = ensureDraft();
+    const set = state.adminMode === "instrumente" ? draft.instrumente : draft.stuecke;
+    if (box.checked) set.delete(box.dataset.toggleKey);
+    else set.add(box.dataset.toggleKey);
     renderAdmin();
   });
+  $("#show-inactive-inst").addEventListener("change", () => { populateInstrumentFilter(); renderSongs(); });
   $("#voice-filter").addEventListener("change", () => {
     lsSet(LS_INSTRUMENT, $("#voice-filter").value);
     renderSongs();

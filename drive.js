@@ -194,8 +194,8 @@ export async function getUserEmail() {
 }
 
 // ---------- Aktive Stücke (kleine JSON-Datei in Drive) ----------
-// Inhalt: { "inaktiv": ["<Ordner-ID>", …], "geaendert": "2026-…", "von": "name@gmail.com" }
-// Gespeichert wird nur, welche Stücke INAKTIV sind. Neue Stücke sind damit automatisch aktiv.
+// Inhalt: { "inaktiv": ["<Ordner-ID>", …], "instrumenteInaktiv": ["Akkordeon", …], "geaendert": "2026-…", "von": "…" }
+// Gespeichert wird nur, was INAKTIV ist. Neue Stücke und Instrumente sind damit automatisch aktiv.
 
 async function findStatusFile(folderId, fileName) {
   const files = await listAll(
@@ -208,14 +208,18 @@ async function findStatusFile(folderId, fileName) {
 
 export async function loadStatus({ folderId, fileName }) {
   const file = await findStatusFile(folderId, fileName);
-  if (!file) return { inaktiv: [], fileId: null };
+  if (!file) return { inaktiv: [], instrumenteInaktiv: [], fileId: null };
   const res = await driveFetch(`${API}/${file.id}?alt=media&supportsAllDrives=true`);
   const data = await res.json().catch(() => ({}));
-  return { inaktiv: Array.isArray(data.inaktiv) ? data.inaktiv : [], geaendert: data.geaendert, von: data.von, fileId: file.id };
+  return {
+    inaktiv: Array.isArray(data.inaktiv) ? data.inaktiv : [],
+    instrumenteInaktiv: Array.isArray(data.instrumenteInaktiv) ? data.instrumenteInaktiv : [],
+    geaendert: data.geaendert, von: data.von, fileId: file.id,
+  };
 }
 
-export async function saveStatus({ folderId, fileName, fileId, inaktiv, von }) {
-  const body = JSON.stringify({ inaktiv, geaendert: new Date().toISOString(), von }, null, 2);
+export async function saveStatus({ folderId, fileName, fileId, inaktiv, instrumenteInaktiv, von }) {
+  const body = JSON.stringify({ inaktiv, instrumenteInaktiv, geaendert: new Date().toISOString(), von }, null, 2);
   if (fileId) {
     const res = await driveFetch(`${UPLOAD}/${fileId}?uploadType=media&supportsAllDrives=true&fields=id`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body,

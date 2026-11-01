@@ -45,6 +45,10 @@
           </select>
         </label>
       </div>
+      <label id="inactive-inst-toggle" class="check hidden">
+        <input type="checkbox" id="show-inactive-inst" />
+        <span id="inactive-inst-label">Auch nicht aktive Instrumente zeigen</span>
+      </label>
       <p id="result-count" class="hint" aria-live="polite"></p>
       <label id="inactive-toggle" class="check hidden">
         <input type="checkbox" id="show-inactive" />
@@ -55,8 +59,12 @@
 
     <!-- Verwaltung (nur für eingetragene Verwaltende sichtbar) -->
     <section id="view-admin" class="view" aria-label="Verwaltung">
-      <h2>Stücke verwalten</h2>
-      <p class="hint">Hier legst du fest, welche Stücke gerade gespielt werden. Nicht aktive Stücke sind für alle ausgeblendet, bleiben aber in Drive erhalten.</p>
+      <div class="segmented" role="group" aria-label="Was verwalten?">
+        <button type="button" class="is-active" data-admin-mode="stuecke">Stücke</button>
+        <button type="button" data-admin-mode="instrumente">Instrumente</button>
+      </div>
+      <h2 id="admin-title">Stücke verwalten</h2>
+      <p id="admin-intro" class="hint"></p>
       <div class="toolbar">
         <label class="field search">
           <span>Suche</span>
@@ -80,7 +88,7 @@
         </span>
       </div>
       <table class="admin-table">
-        <thead><tr><th class="num">Nr.</th><th>Stück</th><th class="switch-cell">Aktiv</th></tr></thead>
+        <thead><tr><th class="num" id="admin-col-num">Nr.</th><th id="admin-col-label">Stück</th><th class="switch-cell">Aktiv</th></tr></thead>
         <tbody id="admin-list"></tbody>
       </table>
       <div class="admin-save">

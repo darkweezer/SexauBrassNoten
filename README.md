@@ -55,7 +55,7 @@ notenapp/
 - [x] Google-Cloud-Projekt „SBNotenarchiv“ angelegt, Client-ID in `config.js` eingetragen
 - [x] Instrumentnamen vereinheitlicht (255 Schreibweisen → 30 Instrumente, Liste in `instruments.js`)
 - [x] Logo und dunkles Design (Schwarz/Gold)
-- [x] Verwaltung: Stücke aktiv/nicht aktiv schalten (nur für Adressen in `config.js` → `VERWALTUNG`)
+- [x] Verwaltung: Stücke und Instrumente aktiv/nicht aktiv schalten (nur für Adressen in `config.js` → `VERWALTUNG`)
 - [ ] Datenbank nur, falls später wirklich nötig
 - [ ] Anleitung „So installieren Sie die App“ mit Bildern
 - [ ] Hosting über GitHub Pages: https://darkweezer.github.io/SexauBrassNoten/ (Repository muss dafür öffentlich sein)
@@ -89,14 +89,18 @@ In einem der beiden Drive-Ordner „Noten“ einen Ordner `Nummer_Titel` anlegen
 und die PDFs hineinlegen, am besten benannt als `Titel_Instrument_Stimme.pdf` (z. B. `Neues_Stueck_Trompete_1.pdf`).
 In der App erscheint das Stück nach dem nächsten Öffnen oder über Hilfe → „Notenliste neu laden“.
 
-## Verwaltung (aktive Stücke)
+## Verwaltung (aktive Stücke und Instrumente)
 
 Wer in `config.js` unter `VERWALTUNG` steht, sieht nach dem Anmelden den Bereich **Verwaltung**.
-Dort steht ein Index aller Stücke (Nummer, Titel) mit einem Schalter „aktiv“. Nicht aktive Stücke
-sind für alle ausgeblendet (lassen sich aber mit einem Haken wieder einblenden).
+Oben schaltet man zwischen zwei Seiten um:
 
-Gespeichert wird in der Datei `notenarchiv-aktive-stuecke.json` im ersten Noten-Ordner in Drive.
-Sie enthält nur die nicht aktiven Stücke, neue Stücke sind also automatisch aktiv.
+- **Stücke**: Index aller Stücke (Nummer, Titel) mit Schalter „aktiv“. Nicht aktive Stücke sind für alle
+  ausgeblendet (lassen sich aber mit einem Haken wieder einblenden).
+- **Instrumente**: alle erkannten Instrumente mit Schalter „aktiv“. Nicht aktive Instrumente fehlen in der
+  Auswahl „Mein Instrument“; darunter blendet ein Haken sie bei Bedarf wieder ein.
+
+Gespeichert wird beides zusammen in der Datei `notenarchiv-aktive-stuecke.json` im ersten Noten-Ordner in Drive.
+Sie enthält nur, was nicht aktiv ist, neue Stücke und Instrumente sind also automatisch aktiv.
 Speichern kann nur, wer Schreibrechte in diesem Ordner hat; die Liste in `config.js` blendet nur die Seite ein.
 
 ## Instrumente
