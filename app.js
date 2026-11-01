@@ -433,9 +433,28 @@ function matchesSearch(song, query) {
   return song.title.toLowerCase().includes(q) || String(song.number ?? "") === q;
 }
 
-function voiceChip(f) {
-  const off = state.offline.has(f.id);
-  return `<button class="voice-chip" data-open="${escapeHtml(f.id)}" type="button">${escapeHtml(f.voice)}${off ? " ✓" : ""}</button>`;
+// Seiten-Dateien einer Stimme ("Trp 2 (S.1)", "Trp 2 (S.2)") erscheinen als EIN Knopf;
+// der Betrachter lädt die weiteren Seiten automatisch mit.
+const voiceBase = (label) => String(label).replace(/\s*\(S\.\d+\)/, "").trim();
+const voicePage = (label) => Number(/\(S\.(\d+)\)/.exec(label)?.[1] ?? 0);
+
+function groupVoices(files) {
+  const groups = new Map();
+  for (const f of files) {
+    const key = voiceBase(f.voice);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(f);
+  }
+  return [...groups].map(([label, list]) => {
+    list.sort((a, b) => voicePage(a.voice) - voicePage(b.voice));
+    return { label, first: list[0], files: list, offline: list.every((f) => state.offline.has(f.id)) };
+  });
+}
+
+function voiceChips(files, cls = "voice-chip", labelFn = (g) => g.label) {
+  return groupVoices(files).map((g) =>
+    `<button class="${cls}" data-open="${escapeHtml(g.first.id)}" type="button" title="${escapeHtml(g.label)}${g.files.length > 1 ? ` (${g.files.length} Seiten)` : ""}">${escapeHtml(labelFn(g))}${g.offline ? " ✓" : ""}</button>`
+  ).join("");
 }
 
 // Stücke als kompakte Tabelle wie in der Verwaltung. Der Schalter speichert die Stimmen offline.
@@ -505,11 +524,12 @@ function renderSongs() {
     const busy = state.saving.get(song.id);
     const open = state.expanded.has(song.id);
 
-    let meta = filtering ? target.map((f) => f.voice).join(" · ") : `${song.files.length} ${song.files.length === 1 ? "Stimme" : "Stimmen"}`;
+    const nVoices = groupVoices(song.files).length;
+    let meta = filtering ? groupVoices(target).map((g) => g.label).join(" · ") : `${nVoices} ${nVoices === 1 ? "Stimme" : "Stimmen"}`;
     if (busy) meta = busy;
     else if (offAll && !on) meta += ` · ${offAll} offline`;
 
-    const chips = (files) => files.map(voiceChip).join("");
+    const chips = (files) => voiceChips(files);
     // Instrument und Stimme gewählt: Schnellbuttons direkt in der Zeile ("Seite 1", "Seite 2")
     const quick = instrument && stimme && !busy ? quickButtons(target) : "";
     const inactive = !song.orphan && !isActive(song);
@@ -536,9 +556,9 @@ function renderSongs() {
         <td></td>
         <td colspan="2">
           <div class="voices">${chips(target)}</div>
-          ${filtering && !song.orphan && target.length < song.files.length ? `
+          ${filtering && !song.orphan && groupVoices(target).length < groupVoices(song.files).length ? `
             <details class="all-voices">
-              <summary>Alle Stimmen (${song.files.length})</summary>
+              <summary>Alle Stimmen (${groupVoices(song.files).length})</summary>
               <div class="voices">${chips(song.files)}</div>
             </details>` : ""}
         </td>
@@ -548,17 +568,8 @@ function renderSongs() {
 
 function quickButtons(files) {
   if (!files.length) return "";
-  const page = (f) => /\(S\.(\d+)\)/.exec(f.voice)?.[1];
-  const base = (f) => f.voice.replace(/\s*\(S\.\d+\)/, "").trim();
-  const sameBase = files.every((f) => base(f) === base(files[0]));
-  const label = (f) => {
-    const p = page(f);
-    if (sameBase) return p ? `Seite ${p}` : "Öffnen";
-    return p ? `${base(f)} · S. ${p}` : base(f);
-  };
-  return `<span class="quick-row">${files.map((f) =>
-    `<button class="voice-chip quick" data-open="${escapeHtml(f.id)}" type="button" title="${escapeHtml(f.voice)}">${escapeHtml(label(f))}${state.offline.has(f.id) ? " ✓" : ""}</button>`
-  ).join("")}</span>`;
+  const single = groupVoices(files).length === 1;
+  return `<span class="quick-row">${voiceChips(files, "voice-chip quick", (g) => (single ? "Öffnen" : g.label))}</span>`;
 }
 
 async function toggleOffline(songId, wantOn) {
@@ -583,8 +594,6 @@ async function toggleOffline(songId, wantOn) {
 
 // Note im eingebauten Betrachter öffnen. Gehört die Datei zu einer Stimme mit mehreren Seiten-Dateien
 // ("Trp 2 (S.1)", "Trp 2 (S.2)"), werden alle zusammen gezeigt und man kann durchblättern.
-const voiceBase = (label) => String(label).replace(/\s*\(S\.\d+\)/, "").trim();
-const voicePage = (label) => Number(/\(S\.(\d+)\)/.exec(label)?.[1] ?? 0);
 
 function openFile(fileId) {
   let song = state.songs.find((s) => s.files.some((f) => f.id === fileId));
@@ -601,7 +610,7 @@ function openFile(fileId) {
   const title = song ? `${song.number != null ? song.number + " " : ""}${song.title}` : "Noten";
   openViewer({
     title,
-    files: group.map((f) => ({ id: f.id, label: f.voice })),
+    files: group.map((f) => ({ id: f.id, label: voiceBase(f.voice) })),
     start: Math.max(0, group.findIndex((f) => f.id === fileId)),
     loadBlob: async (id) => (await getPdfBlob(id)) ?? (await downloadPdf(id)),
     // Zoom je Seite wird pro Nutzer auf diesem Gerät gemerkt
