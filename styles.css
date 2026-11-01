@@ -380,3 +380,6 @@ body.viewer-open { overflow: hidden; }
 .assign-clear { height: 42px; border-radius: 50%; width: 42px; border-left: 1px solid var(--border); }
 @media (max-width: 559px) { .assign-fields { grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) 42px; } .assign-fields .field span { font-size: 0.75rem; } }
 .assign-fields + .assign-fields .field > span { display: none; }
+.assign-preview { background: #fff; border-radius: 6px; overflow: hidden; min-height: 40px; display: grid; place-items: center; }
+.assign-preview img { display: block; width: 100%; height: auto; }
+.assign-preview .hint { color: #666; margin: 8px; font-size: 0.85rem; }

@@ -9,7 +9,7 @@ import {
   getUserEmail, loadStatus, saveStatus,
 } from "./drive.js";
 import { INSTRUMENT_ORDER, SONSTIGE, findInstruments, isCollectionTitle } from "./instruments.js";
-import { openViewer } from "./viewer.js";
+import { openViewer, renderPdfStrip } from "./viewer.js";
 import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
@@ -352,6 +352,7 @@ function renderAdmin() {
       b.classList.toggle("is-active", b.dataset.adminMode === state.adminMode));
     renderAssign();
     renderSaveState();
+    queuePreviews();
     return;
   }
   const isInst = state.adminMode === "instrumente";
@@ -479,6 +480,8 @@ function renderAssign() {
                 <span><strong>${escapeHtml(v.base)}</strong>${v.files.length > 1 ? ` <span class="admin-meta">(${v.files.length} Seiten)</span>` : ""}
                   <span class="admin-meta">wird angezeigt als: ${escapeHtml(now)}</span></span>
               </div>
+              <div class="assign-preview" data-preview="${escapeHtml(v.files[0].id)}">${previewCache.has(v.files[0].id)
+                ? previewHtml(v.files[0].id) : `<span class="hint">Vorschau wird geladen …</span>`}</div>
               <div class="assign-lines">
                 ${lines.map((l, i) => `
                   <div class="assign-fields" data-line="${i}">
@@ -502,6 +505,54 @@ function displayVariantsWith(f, song, z) {
   if (o) return overrideVariants(o, voiceBase(f.voice));
   const bases = [...new Set(song.files.map((x) => voiceBase(x.voice)))];
   return labelVariants(bases, { keepOriginal: isCollectionTitle(song.title) }).get(voiceBase(f.voice)) ?? [{ label: f.voice }];
+}
+
+// ---------- Vorschau-Streifen (oberer Rand der ersten Seite) ----------
+const previewCache = new Map(); // fileId -> data-URL | "error"
+const previewQueue = [];
+const previewPending = new Set();
+let previewRunning = 0;
+const PREVIEW_PARALLEL = 3;
+
+function previewHtml(id) {
+  const v = previewCache.get(id);
+  if (v === "error") return `<span class="hint">Keine Vorschau möglich.</span>`;
+  return `<img src="${v}" alt="Oberer Rand des Notenblatts" />`;
+}
+
+function queuePreviews() {
+  // nur sichtbare (aufgeklappte) Stücke laden
+  document.querySelectorAll(".assign-song[open] [data-preview]").forEach((el) => {
+    const id = el.dataset.preview;
+    if (!previewCache.has(id) && !previewPending.has(id)) {
+      previewPending.add(id);
+      previewQueue.push(id);
+    }
+  });
+  pumpPreviews();
+}
+
+function pumpPreviews() {
+  while (previewRunning < PREVIEW_PARALLEL && previewQueue.length) {
+    const id = previewQueue.shift();
+    previewRunning++;
+    (async () => {
+      try {
+        const blob = (await getPdfBlob(id)) ?? (await downloadPdf(id));
+        previewCache.set(id, await renderPdfStrip(blob, 2.5, 700));
+      } catch (err) {
+        if (err instanceof NotLoggedInError) { previewQueue.length = 0; previewPending.clear(); handleError(err); return; }
+        previewCache.set(id, "error");
+      } finally {
+        previewRunning--;
+        previewPending.delete(id);
+        document.querySelectorAll(`[data-preview="${CSS.escape(id)}"]`).forEach((el) => {
+          if (previewCache.has(id)) el.innerHTML = previewHtml(id);
+        });
+        pumpPreviews();
+      }
+    })();
+  }
 }
 
 function readLines(row) {
@@ -1036,6 +1087,7 @@ function bindEvents() {
     const d = e.target.closest?.(".assign-song");
     if (!d) return;
     if (d.open) state.assignOpen.add(d.dataset.song); else state.assignOpen.delete(d.dataset.song);
+    if (d.open) queuePreviews();
   }, true);
   $("#admin-list").addEventListener("change", (e) => {
     const box = e.target.closest("[data-toggle-key]");

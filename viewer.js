@@ -439,3 +439,33 @@ function bindControls(v) {
     }
   });
 }
+
+/**
+ * Kleine Vorschau: oberer Streifen der ersten Seite als Bild (für die Verwaltung „Zuordnen“).
+ * @param {Blob} blob   PDF-Datei
+ * @param {number} cm   Höhe des Streifens in cm (vom oberen Rand)
+ * @param {number} cssWidth  gewünschte Breite in Bildschirmpixeln
+ * @returns {Promise<string>} Bild als data-URL
+ */
+export async function renderPdfStrip(blob, cm = 2.5, cssWidth = 600) {
+  const lib = await loadPdfJs();
+  const doc = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), isEvalSupported: false }).promise;
+  try {
+    const page = await doc.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const scale = (cssWidth / base.width) * dpr;
+    const viewport = page.getViewport({ scale });
+    const stripPt = (cm / 2.54) * 72; // cm -> PDF-Punkte
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.max(1, Math.floor(Math.min(base.height, stripPt) * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise; // zeichnet nur, was auf die Leinwand passt
+    return canvas.toDataURL("image/jpeg", 0.8);
+  } finally {
+    doc.destroy();
+  }
+}
