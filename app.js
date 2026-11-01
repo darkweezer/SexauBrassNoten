@@ -19,6 +19,7 @@ const LS_SONGS = "notenarchiv.stueckliste.v2"; // v2: Instrumente zusammengefass
 const LS_INSTRUMENT = "notenarchiv.instrument";
 const LS_STIMME = "notenarchiv.stimme";
 const LS_STATUS = "notenarchiv.inaktiv";
+const LS_USER = "notenapp.nutzer";
 
 const state = {
   songs: [],          // [{ id, number, title, files: [{ id, name, voice, instrument, instruments, size }] }]
@@ -230,6 +231,7 @@ const isInstrumentActive = (name) => !state.instInaktiv.has(name);
 async function checkAdmin() {
   try {
     state.email = await getUserEmail();
+    if (state.email) lsSet(LS_USER, state.email); // für Zoom-Einstellungen auch ohne Internet
   } catch { state.email = ""; }
   const admins = (CONFIG.VERWALTUNG ?? []).map((a) => a.toLowerCase().replace("@googlemail.com", "@gmail.com"));
   state.isAdmin = admins.includes(state.email.replace("@googlemail.com", "@gmail.com"));
@@ -602,6 +604,8 @@ function openFile(fileId) {
     files: group.map((f) => ({ id: f.id, label: f.voice })),
     start: Math.max(0, group.findIndex((f) => f.id === fileId)),
     loadBlob: async (id) => (await getPdfBlob(id)) ?? (await downloadPdf(id)),
+    // Zoom je Seite wird pro Nutzer auf diesem Gerät gemerkt
+    zoomKey: `notenapp.zoom.${(state.email || lsGet(LS_USER) || "gast").toLowerCase()}`,
   }).catch(handleError);
 }
 

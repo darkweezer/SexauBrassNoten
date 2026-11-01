@@ -119,4 +119,5 @@ einfach in `instruments.js` beim passenden Instrument ergänzen. Stimmen für me
 
 Noten öffnen sich im eingebauten Betrachter (`viewer.js`). Er nutzt pdf.js von Mozilla (Apache-2.0-Lizenz),
 das unverändert im Ordner `vendor/pdfjs` liegt (Version 4.10.38, „legacy“-Fassung für ältere iPads), damit es auch offline funktioniert.
-Blättern: wischen, Rand antippen, Pfeiltasten oder Fußpedal. Mehrere Seiten-Dateien einer Stimme werden zu einer Seitenfolge verbunden.
+Blättern: wischen, Rand antippen, Pfeiltasten oder Fußpedal. Zoomen: zwei Finger, Doppeltipp, − / + oder Strg + Mausrad;
+Zoom und Ausschnitt werden je Seite und Nutzer im Browser gespeichert (`localStorage`, Schlüssel `notenapp.zoom.<E-Mail>`) und beim Öffnen wiederhergestellt. Mehrere Seiten-Dateien einer Stimme werden zu einer Seitenfolge verbunden.
