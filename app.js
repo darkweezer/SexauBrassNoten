@@ -13,6 +13,7 @@ import { openViewer, renderPdfStrip } from "./viewer.js";
 import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
+const APP_VERSION = "30"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
@@ -935,6 +936,7 @@ async function saveAllVisible() {
     toast(`Zu viele Dateien: Maximal ${MAX_OFFLINE_FILES} Noten offline (gerade ${state.offline.size}).`, 5000);
     return;
   }
+  if (!(await ensureSignedIn())) return;
   const btn = $("#save-all-btn");
   state.bulkSaving = true;
   btn.disabled = true;
@@ -974,6 +976,30 @@ async function saveAllVisible() {
     renderSongs();
     updateStorageEstimate();
   }
+}
+
+// Vor dem Herunterladen anmelden, falls nötig. Läuft direkt im Klick, damit der Browser
+// das Google-Fenster nicht blockiert (die Liste kommt beim Start aus dem Speicher, ohne Anmeldung).
+async function ensureSignedIn() {
+  if (isSignedIn()) return true;
+  try {
+    await signIn({ interactive: true });
+    updateLoginUi();
+    return isSignedIn();
+  } catch {
+    handleError(new NotLoggedInError());
+    return false;
+  }
+}
+
+// Versionsanzeige in der Hilfe: zeigt, ob Programm und Gestaltung zusammenpassen
+function showVersion() {
+  const css = getComputedStyle(document.documentElement).getPropertyValue("--css-version").replace(/["'\s]/g, "");
+  const el = $("#app-version");
+  if (!el) return;
+  el.textContent = css === APP_VERSION
+    ? `Version ${APP_VERSION}`
+    : `Version ${APP_VERSION} (Gestaltung ${css || "alt"}) – bitte Seite neu laden`;
 }
 
 // Knopf „Alle herunterladen“: eigener Balken (Element) und Text, damit kein Knopf-Stil den Balken überdeckt
@@ -1016,6 +1042,7 @@ async function toggleOffline(songId, wantOn) {
     renderSongs();
     return;
   }
+  if (!(await ensureSignedIn())) { renderSongs(); return; }
   await saveFiles(song.id, missing.map((f) => offlineEntry(song, f)));
 }
 
@@ -1266,6 +1293,7 @@ async function init() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
+  showVersion();
 
   if (!navigator.onLine) {
     if (state.offline.size) { $("#only-offline").checked = true; renderSongs(); }

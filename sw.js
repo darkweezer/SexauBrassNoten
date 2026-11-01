@@ -1,7 +1,7 @@
 // Service Worker: hält die App-Hülle offline verfügbar.
 // PDFs werden NICHT hier gecacht, sondern über IndexedDB (siehe app.js).
 
-const CACHE_VERSION = "notenarchiv-v29";
+const CACHE_VERSION = "notenarchiv-v30";
 const APP_SHELL = [
   "./",
   "index.html",
@@ -45,8 +45,10 @@ self.addEventListener("fetch", (event) => {
   if (new URL(req.url).origin !== self.location.origin) return;
 
   // Netz zuerst, damit Änderungen an der App sofort ankommen. Ohne Internet: gespeicherte Kopie.
+  // "no-cache": beim Server nachfragen statt die 10-Minuten-Kopie des Browsers zu nehmen,
+  // sonst passen nach einem Update Programm und Gestaltung manchmal nicht zusammen.
   event.respondWith(
-    fetch(req).then((res) => {
+    fetch(req.url, { cache: "no-cache", credentials: "same-origin" }).then((res) => {
       if (res.ok) {
         const copy = res.clone();
         caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
