@@ -741,10 +741,46 @@ async function updateStorageEstimate() {
   navigator.storage?.persist?.().catch(() => {});
 }
 
+// ---------- Vollbild ----------
+// Funktioniert in Chrome, Edge, Firefox und Safari auf iPad/Mac. Das iPhone kennt kein Vollbild für Webseiten:
+// dort hilft „Zum Home-Bildschirm“, dann startet die App ohne Browserleiste. Der Knopf bleibt dort ausgeblendet.
+
+const fsElement = () => document.fullscreenElement ?? document.webkitFullscreenElement;
+const fsSupported = () => Boolean(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+
+async function toggleFullscreen() {
+  try {
+    if (fsElement()) {
+      await (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.());
+    } else {
+      const el = document.documentElement;
+      await (el.requestFullscreen?.({ navigationUI: "hide" }) ?? el.webkitRequestFullscreen?.());
+    }
+  } catch {
+    toast("Vollbild ist in diesem Browser nicht möglich.");
+  }
+}
+
+function initFullscreen() {
+  const btn = $("#fullscreen-btn");
+  if (!fsSupported()) return;
+  btn.classList.remove("hidden");
+  btn.addEventListener("click", toggleFullscreen);
+  const update = () => {
+    const on = Boolean(fsElement());
+    document.documentElement.classList.toggle("is-fullscreen", on);
+    btn.setAttribute("aria-label", on ? "Vollbild beenden" : "Vollbild");
+    btn.title = on ? "Vollbild beenden" : "Vollbild";
+  };
+  document.addEventListener("fullscreenchange", update);
+  document.addEventListener("webkitfullscreenchange", update);
+}
+
 // ---------- Start ----------
 
 async function init() {
   bindEvents();
+  initFullscreen();
   try {
     await loadOfflineIndex();
   } catch (err) {
