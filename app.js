@@ -15,7 +15,7 @@ import { initPrint, renderPrint } from "./print.js";
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
-const MAX_OFFLINE_FILES = 150;  // Obergrenze, damit der Gerätespeicher nicht überläuft
+const MAX_OFFLINE_FILES = 400;  // Obergrenze, damit der Gerätespeicher nicht überläuft
 const LS_SONGS = "notenarchiv.stueckliste.v2"; // v2: Instrumente zusammengefasst
 const LS_INSTRUMENT = "notenarchiv.instrument";
 const LS_STIMME = "notenarchiv.stimme";
@@ -518,6 +518,20 @@ function renderSongs() {
   }
   $("#song-table").classList.toggle("hidden", visible.length === 0);
 
+  // Instrument und Stimme gewählt: alle angezeigten Stücke auf einmal offline speichern
+  state.visibleSongs = visible;
+  const bulk = $("#save-all-btn");
+  const showBulk = Boolean(instrument && stimme) && visible.length > 0 && !onlyOffline;
+  bulk.classList.toggle("hidden", !showBulk);
+  if (showBulk && !state.bulkSaving) {
+    const allTargets = visible.flatMap((song) => targetFiles(song));
+    const missing = allTargets.filter((f) => !state.offline.has(f.id)).length;
+    bulk.disabled = missing === 0;
+    bulk.textContent = missing === 0
+      ? "✓ Alle angezeigten Stücke sind offline"
+      : `Alle herunterladen (${visible.length} ${visible.length === 1 ? "Stück" : "Stücke"}, ${missing} ${missing === 1 ? "Datei" : "Dateien"})`;
+  }
+
   $("#song-list").innerHTML = visible.map((song) => {
     const target = song.orphan ? song.files : targetFiles(song);
     const offTarget = target.filter((f) => state.offline.has(f.id)).length;
@@ -572,6 +586,38 @@ function quickButtons(files) {
   if (!files.length) return "";
   const single = groupVoices(files).length === 1;
   return `<span class="quick-row">${voiceChips(files, "voice-chip quick", (g) => (single ? "Öffnen" : g.label))}</span>`;
+}
+
+async function saveAllVisible() {
+  if (state.bulkSaving) return;
+  const songs = (state.visibleSongs ?? []).filter((s) => !s.orphan);
+  const jobs = songs.flatMap((song) => targetFiles(song).filter((f) => !state.offline.has(f.id)).map((f) => offlineEntry(song, f)));
+  if (!jobs.length) return;
+  if (state.offline.size + jobs.length > MAX_OFFLINE_FILES) {
+    toast(`Zu viele Dateien: Maximal ${MAX_OFFLINE_FILES} Noten offline (gerade ${state.offline.size}).`, 5000);
+    return;
+  }
+  const btn = $("#save-all-btn");
+  state.bulkSaving = true;
+  btn.disabled = true;
+  let done = 0;
+  try {
+    for (const file of jobs) {
+      btn.textContent = `Lade ${done + 1} von ${jobs.length} …`;
+      const blob = await downloadPdf(file.id);
+      await savePdf(file, blob);
+      done++;
+      if (done % 5 === 0) renderSongs();
+    }
+    toast(`${done} ${done === 1 ? "Datei" : "Dateien"} offline gespeichert`);
+  } catch (err) {
+    if (done) toast(`${done} von ${jobs.length} gespeichert, dann abgebrochen.`, 4000);
+    handleError(err);
+  } finally {
+    state.bulkSaving = false;
+    renderSongs();
+    updateStorageEstimate();
+  }
 }
 
 async function toggleOffline(songId, wantOn) {
@@ -696,6 +742,7 @@ function bindEvents() {
     renderSongs();
   });
   $("#only-offline").addEventListener("change", renderSongs);
+  $("#save-all-btn").addEventListener("click", saveAllVisible);
   $("#song-list").addEventListener("change", (e) => {
     const box = e.target.closest("[data-offline-song]");
     if (box) toggleOffline(box.dataset.offlineSong, box.checked);

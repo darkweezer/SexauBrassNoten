@@ -357,3 +357,4 @@ body.viewer-open { overflow: hidden; }
   .print-page:last-child { break-after: auto; page-break-after: auto; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+.save-all { width: 100%; margin: 0 0 10px; }
