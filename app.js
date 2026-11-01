@@ -21,6 +21,7 @@ const LS_INSTRUMENT = "notenarchiv.instrument";
 const LS_STIMME = "notenarchiv.stimme";
 const LS_STATUS = "notenarchiv.inaktiv";
 const LS_USER = "notenapp.nutzer";
+const LS_SOLO = "notenapp.solo";
 
 const state = {
   songs: [],          // [{ id, number, title, files: [{ id, name, voice, instrument, instruments, size }] }]
@@ -84,8 +85,14 @@ function voiceNumbers(f) {
 }
 
 // Passt eine Datei zu Instrument und Stimme? Stimmen ohne Nummer (z. B. "Tuba") gelten für alle Stimmen.
+// Solo-Stimmen ("Solo Trp", "Solostimme B", "TenSax Solopart") sind beim Filtern ausgeblendet,
+// außer der Haken „Auch Solo-Stimmen zeigen“ ist gesetzt.
+const isSolo = (f) => /solo/i.test(String(f.voice));
+const showSolo = () => Boolean(document.querySelector("#show-solo")?.checked);
+
 function fileMatches(f, instrument, stimme) {
   if (instrument && !fileHas(f, instrument)) return false;
+  if ((instrument || stimme) && isSolo(f) && !showSolo()) return false;
   if (!stimme) return true;
   const nums = voiceNumbers(f);
   return nums.length === 0 || nums.includes(Number(stimme));
@@ -518,6 +525,13 @@ function renderSongs() {
   }
   $("#song-table").classList.toggle("hidden", visible.length === 0);
 
+  // Haken für Solo-Stimmen nur zeigen, wenn es zur Auswahl welche gibt
+  const soloCount = filtering
+    ? pool.reduce((n, song) => n + groupVoices(song.files.filter((f) => isSolo(f) && (!instrument || fileHas(f, instrument)))).length, 0)
+    : 0;
+  $("#solo-toggle").classList.toggle("hidden", soloCount === 0);
+  $("#solo-label").textContent = `Auch Solo-Stimmen zeigen (${soloCount})`;
+
   // Instrument und Stimme gewählt: alle angezeigten Stücke auf einmal offline speichern
   state.visibleSongs = visible;
   const bulk = $("#save-all-btn");
@@ -742,6 +756,12 @@ function bindEvents() {
     renderSongs();
   });
   $("#only-offline").addEventListener("change", renderSongs);
+  $("#show-solo").checked = lsGet(LS_SOLO) === "1";
+  $("#show-solo").addEventListener("change", () => {
+    lsSet(LS_SOLO, $("#show-solo").checked ? "1" : "0");
+    populateStimmeFilter();
+    renderSongs();
+  });
   $("#save-all-btn").addEventListener("click", saveAllVisible);
   $("#song-list").addEventListener("change", (e) => {
     const box = e.target.closest("[data-offline-song]");
