@@ -285,10 +285,13 @@ body.viewer-open { overflow: hidden; }
 .viewer.is-zoomed .viewer-nav { pointer-events: none; }
 .viewer.is-zoomed .viewer-nav span { pointer-events: auto; }
 .viewer-reset {
-  position: absolute; left: 50%; transform: translateX(-50%); bottom: max(16px, env(safe-area-inset-bottom));
-  padding: 10px 18px; border-radius: 999px; border: 1px solid var(--accent); background: rgba(14, 14, 16, 0.85); white-space: nowrap;
-  color: var(--accent); font: inherit; font-weight: 600; cursor: pointer;
+  flex: 0 0 auto; height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--accent);
+  background: transparent; color: var(--accent); font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer;
 }
+.viewer-reset.is-off { visibility: hidden; }
+/* Bar: Titel | Zoom zurück (mittig) | − + ✕ */
+.viewer-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.viewer-bar .viewer-tools { display: flex; gap: 8px; justify-content: flex-end; }
 
 /* Vollbild-Knopf oben rechts */
 .icon-btn {

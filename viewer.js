@@ -135,9 +135,12 @@ function buildDom(title) {
   root.innerHTML = `
     <div class="viewer-bar">
       <div class="viewer-title"><strong></strong><span class="viewer-page"></span></div>
+      <button class="viewer-reset is-off" type="button" aria-label="Zoom zurücksetzen">↺ Zoom</button>
+      <div class="viewer-tools">
       <button class="viewer-btn viewer-zoom-out" type="button" aria-label="Verkleinern">−</button>
       <button class="viewer-btn viewer-zoom-in" type="button" aria-label="Vergrößern">+</button>
       <button class="viewer-btn viewer-close" type="button" aria-label="Schließen">✕</button>
+      </div>
     </div>
     <div class="viewer-stage">
       <div class="viewer-inner"><canvas class="viewer-canvas"></canvas></div>
@@ -147,7 +150,7 @@ function buildDom(title) {
     </div>
     <button class="viewer-nav prev" type="button" aria-label="Vorherige Seite"><span>‹</span></button>
     <button class="viewer-nav next" type="button" aria-label="Nächste Seite"><span>›</span></button>
-    <button class="viewer-reset hidden" type="button">Zoom zurücksetzen</button>`;
+`;
   $(".viewer-title strong", root).textContent = title;
   document.body.append(root);
   document.body.classList.add("viewer-open");
@@ -170,7 +173,7 @@ function updateBar(v) {
   $(".viewer-nav.next", v.root).disabled = v.index >= total - 1 && !loading;
   $(".viewer-zoom-out", v.root).disabled = v.zoom <= MIN_ZOOM + 0.01;
   $(".viewer-zoom-in", v.root).disabled = v.zoom >= MAX_ZOOM - 0.01;
-  $(".viewer-reset", v.root).classList.toggle("hidden", v.zoom <= 1.01);
+  $(".viewer-reset", v.root).classList.toggle("is-off", v.zoom <= 1.01);
   v.root.classList.toggle("is-zoomed", v.zoom > 1.01);
 }
 
