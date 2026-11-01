@@ -86,6 +86,7 @@
       <div class="segmented" role="group" aria-label="Was verwalten?">
         <button type="button" class="is-active" data-admin-mode="stuecke">Stücke</button>
         <button type="button" data-admin-mode="instrumente">Instrumente</button>
+        <button type="button" data-admin-mode="zuordnen">Zuordnen</button>
       </div>
       <h2 id="admin-title">Stücke verwalten</h2>
       <p id="admin-intro" class="hint"></p>
@@ -104,14 +105,15 @@
         </label>
       </div>
       <p id="admin-info" class="hint"></p>
-      <div class="admin-bar">
+      <div id="admin-bar" class="admin-bar">
         <span id="admin-count" class="hint"></span>
         <span class="song-actions">
           <button id="admin-all-on" class="btn secondary small" type="button">Alle aktiv</button>
           <button id="admin-all-off" class="btn secondary small" type="button">Alle nicht aktiv</button>
         </span>
       </div>
-      <table class="admin-table">
+      <div id="assign-list" class="assign-list hidden"></div>
+      <table id="admin-table" class="admin-table">
         <thead><tr><th class="num" id="admin-col-num">Nr.</th><th id="admin-col-label">Stück</th><th class="switch-cell">Aktiv</th></tr></thead>
         <tbody id="admin-list"></tbody>
       </table>

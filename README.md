@@ -99,7 +99,10 @@ Oben schaltet man zwischen zwei Seiten um:
 - **Instrumente**: alle erkannten Instrumente mit Schalter „aktiv“. Nicht aktive Instrumente fehlen in der
   Auswahl „Mein Instrument“; darunter blendet ein Haken sie bei Bedarf wieder ein.
 
-Gespeichert wird beides zusammen in der Datei `notenarchiv-aktive-stuecke.json` im ersten Noten-Ordner in Drive.
+- **Zuordnen**: für Dateien, deren Name das Instrument nicht verrät (flexible Besetzungen „1. Stimme in B“, Scans „CCF…“),
+  Instrument(e), Stimme und Stimmung festlegen. Das überschreibt die automatische Erkennung für alle Seiten dieser Stimme.
+
+Gespeichert wird alles zusammen in der Datei `notenarchiv-aktive-stuecke.json` im ersten Noten-Ordner in Drive.
 Sie enthält nur, was nicht aktiv ist, neue Stücke und Instrumente sind also automatisch aktiv.
 Speichern kann nur, wer Schreibrechte in diesem Ordner hat; die Liste in `config.js` blendet nur die Seite ein.
 

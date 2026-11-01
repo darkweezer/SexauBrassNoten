@@ -358,3 +358,22 @@ body.viewer-open { overflow: hidden; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 .save-all { width: 100%; margin: 0 0 10px; }
+
+/* Verwaltung: Stimmen zuordnen */
+.assign-list { display: grid; gap: 8px; margin-bottom: 12px; }
+.assign-song { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.assign-song > summary { padding: 12px 14px; cursor: pointer; font-weight: 600; list-style-position: inside; }
+.assign-song > summary .admin-meta { display: block; font-weight: 400; margin-left: 1.2em; }
+.assign-song[open] > summary { color: var(--accent); border-bottom: 1px solid var(--border); }
+.assign-rows { display: grid; }
+.assign-row { padding: 10px 14px; border-bottom: 1px solid var(--border); display: grid; gap: 8px; }
+.assign-row:last-child { border-bottom: 0; }
+.assign-row.is-set { background: rgba(217, 180, 74, 0.06); }
+.assign-name { display: flex; align-items: center; gap: 10px; }
+.assign-name .voice-chip { flex: 0 0 auto; }
+.assign-name .admin-meta { display: block; }
+.assign-fields { display: grid; grid-template-columns: 1.4fr 1.4fr 0.8fr 0.9fr auto; gap: 6px; align-items: end; }
+.assign-fields .field { font-size: 0.8rem; }
+.assign-fields select { padding: 8px 6px; height: 42px; min-height: 42px; font-size: 0.9rem; }
+.assign-clear { height: 42px; border-radius: 50%; width: 42px; border-left: 1px solid var(--border); }
+@media (max-width: 559px) { .assign-fields { grid-template-columns: 1fr 1fr; } }

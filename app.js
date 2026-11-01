@@ -10,7 +10,7 @@ import {
 } from "./drive.js";
 import { INSTRUMENT_ORDER, SONSTIGE, findInstruments, isCollectionTitle } from "./instruments.js";
 import { openViewer } from "./viewer.js";
-import { labelVariants } from "./labels.js";
+import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
 const DB_NAME = "notenarchiv";
@@ -38,6 +38,9 @@ const state = {
   instInaktiv: new Set(), // Instrumente, die gerade nicht besetzt sind
   draft: null,        // Verwaltung: noch nicht gespeicherte Änderungen { stuecke: Set, instrumente: Set }
   adminMode: "stuecke",
+  zuordnung: {},      // von der Verwaltung korrigierte Stimmen: "<songId>|<Stimme>" -> { inst, nr, st }
+  zVersion: 0,
+  assignOpen: new Set(),
 };
 
 // ---------- Hilfsfunktionen ----------
@@ -64,13 +67,38 @@ function escapeHtml(text) {
 }
 
 // Eine Stimme kann für mehrere Instrumente gelten ("Oboe_Glockenspiel")
-const fileInstruments = (f) => f.instruments ?? (f.instrument ? [f.instrument] : null)
+const rawInstruments = (f) => f.instruments ?? (f.instrument ? [f.instrument] : null)
   ?? findInstruments(String(f.voice).split(" "))?.instruments ?? [SONSTIGE];
+
+// Zuordnung aus der Verwaltung (überschreibt, was aus dem Dateinamen erkannt wurde)
+let fileSongIndex = new Map();
+let fileSongIndexFor = null;
+function songIdOf(f) {
+  if (f.songId) return f.songId;
+  if (fileSongIndexFor !== state.songs) {
+    fileSongIndex = new Map();
+    fileSongIndexFor = state.songs;
+    for (const song of state.songs) for (const file of song.files) fileSongIndex.set(file.id, song.id);
+  }
+  return fileSongIndex.get(f.id);
+}
+const zuordnungKey = (songId, f) => `${songId}|${voiceBase(f.voice)}`;
+function overrideFor(f, z = state.zuordnung) {
+  const o = z?.[zuordnungKey(songIdOf(f), f)];
+  return o && (o.inst?.length || o.nr || o.st) ? o : null;
+}
+
+const fileInstruments = (f) => {
+  const o = overrideFor(f);
+  return o?.inst?.length ? o.inst : rawInstruments(f);
+};
 const fileHas = (f, instrument) => fileInstruments(f).includes(instrument);
 
 // Stimmnummern aus dem Label lesen: "Trompete 2" -> [2], "Horn 3u 4 Es" -> [3, 4], "Tuba (S.1)" -> []
 // Seitenzahlen "(S.x)" und lange Zahlen (Scan-Nummern) zählen nicht.
 function voiceNumbers(f) {
+  const o = overrideFor(f);
+  if (o?.nr) return [Number(o.nr)];
   if (!f._nums) {
     const tokens = String(f.voice).replace(/\(S\.\d+\)/g, " ").split(/[\s/,+]+/);
     const nums = new Set();
@@ -206,16 +234,22 @@ async function refreshSongs() {
 
 // ---------- Aktive Stücke ----------
 
+function setZuordnung(z) {
+  state.zuordnung = z ?? {};
+  state.zVersion++;
+}
+
 function loadCachedStatus() {
   try {
     const data = JSON.parse(lsGet(LS_STATUS) ?? "null");
     if (Array.isArray(data?.inaktiv)) state.inaktiv = new Set(data.inaktiv);
     if (Array.isArray(data?.instrumenteInaktiv)) state.instInaktiv = new Set(data.instrumenteInaktiv);
+    if (data?.zuordnung && typeof data.zuordnung === "object") setZuordnung(data.zuordnung);
   } catch {}
 }
 
 function cacheStatus() {
-  lsSet(LS_STATUS, JSON.stringify({ inaktiv: [...state.inaktiv], instrumenteInaktiv: [...state.instInaktiv] }));
+  lsSet(LS_STATUS, JSON.stringify({ inaktiv: [...state.inaktiv], instrumenteInaktiv: [...state.instInaktiv], zuordnung: state.zuordnung }));
 }
 
 async function refreshStatus() {
@@ -225,6 +259,7 @@ async function refreshStatus() {
     if (state.draft && !draftChanged()) state.draft = null;
     state.inaktiv = new Set(status.inaktiv);
     state.instInaktiv = new Set(status.instrumenteInaktiv);
+    setZuordnung(status.zuordnung ?? {});
     state.statusFileId = status.fileId;
     state.statusInfo = status.geaendert ? { geaendert: status.geaendert, von: status.von } : null;
     cacheStatus();
@@ -265,13 +300,19 @@ function allInstruments() {
 }
 
 function ensureDraft() {
-  if (!state.draft) state.draft = { stuecke: new Set(state.inaktiv), instrumente: new Set(state.instInaktiv) };
+  if (!state.draft) {
+    state.draft = {
+      stuecke: new Set(state.inaktiv), instrumente: new Set(state.instInaktiv),
+      zuordnung: JSON.parse(JSON.stringify(state.zuordnung)),
+    };
+  }
   return state.draft;
 }
 
 function draftChanged() {
   const d = state.draft;
-  return Boolean(d) && (!sameSet(d.stuecke, state.inaktiv) || !sameSet(d.instrumente, state.instInaktiv));
+  return Boolean(d) && (!sameSet(d.stuecke, state.inaktiv) || !sameSet(d.instrumente, state.instInaktiv)
+    || JSON.stringify(sortKeys(d.zuordnung)) !== JSON.stringify(sortKeys(state.zuordnung)));
 }
 
 function adminItems() {
@@ -285,6 +326,17 @@ function adminItems() {
 
 function renderAdmin() {
   const draft = ensureDraft();
+  const isAssign = state.adminMode === "zuordnen";
+  $("#assign-list").classList.toggle("hidden", !isAssign);
+  $("#admin-table").classList.toggle("hidden", isAssign);
+  $("#admin-bar").classList.toggle("hidden", isAssign);
+  if (isAssign) {
+    document.querySelectorAll("[data-admin-mode]").forEach((b) =>
+      b.classList.toggle("is-active", b.dataset.adminMode === state.adminMode));
+    renderAssign();
+    renderSaveState();
+    return;
+  }
   const isInst = state.adminMode === "instrumente";
   const set = isInst ? draft.instrumente : draft.stuecke;
   const query = $("#admin-search").value.trim().toLowerCase();
@@ -309,13 +361,7 @@ function renderAdmin() {
   const activeCount = all.filter((it) => !set.has(it.key)).length;
   $("#admin-count").textContent = `${activeCount} von ${all.length} ${isInst ? "Instrumenten" : "Stücken"} aktiv`;
 
-  const changed = draftChanged();
-  $("#admin-save").disabled = !changed;
-  $("#admin-unsaved").classList.toggle("hidden", !changed);
-  const info = state.statusInfo;
-  $("#admin-info").textContent = info
-    ? `Zuletzt gespeichert am ${new Date(info.geaendert).toLocaleString("de-DE")} von ${info.von}`
-    : "Noch nichts gespeichert: Alles gilt als aktiv.";
+  renderSaveState();
 
   $("#admin-list").innerHTML = items.map((it) => {
     const active = !set.has(it.key);
@@ -334,6 +380,119 @@ function renderAdmin() {
   }).join("") || `<tr><td colspan="3" class="hint">Nichts gefunden.</td></tr>`;
 }
 
+function renderSaveState() {
+  const changed = draftChanged();
+  $("#admin-save").disabled = !changed;
+  $("#admin-unsaved").classList.toggle("hidden", !changed);
+  const info = state.statusInfo;
+  $("#admin-info").textContent = info
+    ? `Zuletzt gespeichert am ${new Date(info.geaendert).toLocaleString("de-DE")} von ${info.von}`
+    : "Noch nichts gespeichert: Alles gilt als aktiv.";
+}
+
+// ---------- Verwaltung: Stimmen zuordnen ----------
+// Für Dateien, deren Name das Instrument nicht verrät ("1_Stimme_B", Scans "CCF…"),
+// legt die Verwaltung Instrument, Stimme und Stimmung fest. Gilt für alle Seiten-Dateien einer Stimme.
+
+const UNCLEAR = new Set(["Stimme (frei besetzbar)", SONSTIGE]);
+const PITCH_OPTIONS = ["B", "C", "Es", "F", "As", "Des", "G", "D"];
+const isUnclear = (f) => rawInstruments(f).some((i) => UNCLEAR.has(i));
+
+function assignVoices(song) {
+  const groups = new Map();
+  for (const f of song.files) {
+    const base = voiceBase(f.voice);
+    if (!groups.has(base)) groups.set(base, []);
+    groups.get(base).push(f);
+  }
+  return [...groups].map(([base, files]) => {
+    files.sort((a, b) => voicePage(a.voice) - voicePage(b.voice));
+    return { base, files, key: zuordnungKey(song.id, files[0]), unclear: files.some(isUnclear) };
+  }).sort((a, b) => a.base.localeCompare(b.base, "de", { numeric: true }));
+}
+
+function renderAssign() {
+  const draft = ensureDraft();
+  const z = draft.zuordnung;
+  const query = $("#admin-search").value.trim();
+  const onlyUnclear = $("#admin-filter").value !== "alle";
+
+  $("#admin-title").textContent = "Stimmen zuordnen";
+  $("#admin-intro").textContent = "Für Dateien, deren Name das Instrument nicht verrät, hier Instrument, Stimme und Stimmung festlegen. "
+    + "Mit „Öffnen“ siehst du das Notenblatt. Gilt für alle Seiten einer Stimme und für alle Musiker.";
+  $("#admin-search").placeholder = "Titel oder Nummer suchen";
+  const sel = $("#admin-filter");
+  if (sel.dataset.mode !== "zuordnen") {
+    sel.innerHTML = `<option value="unklar">Nur unklare Stimmen</option><option value="alle">Alle Stimmen</option>`;
+    sel.dataset.mode = "zuordnen";
+  }
+
+  const songs = [...state.songs]
+    .sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"))
+    .filter((s) => matchesSearch(s, query))
+    .map((song) => {
+      const voices = assignVoices(song).filter((v) => !onlyUnclear || v.unclear || z[v.key]);
+      return { song, voices };
+    })
+    .filter((x) => x.voices.length);
+
+  const instOptions = (selected) => `<option value="">–</option>` + INSTRUMENT_ORDER
+    .filter((n) => !UNCLEAR.has(n))
+    .map((n) => `<option value="${escapeHtml(n)}" ${n === selected ? "selected" : ""}>${escapeHtml(niceInstrument(n))}</option>`).join("");
+  const opts = (list, selected, empty = "–") => `<option value="">${empty}</option>` +
+    list.map((v) => `<option value="${v}" ${String(v) === String(selected ?? "") ? "selected" : ""}>${v}</option>`).join("");
+
+  $("#assign-list").innerHTML = songs.map(({ song, voices }) => {
+    const open = state.assignOpen.has(song.id) || Boolean(query);
+    const done = voices.filter((v) => z[v.key]).length;
+    return `
+      <details class="assign-song" data-song="${escapeHtml(song.id)}" ${open ? "open" : ""}>
+        <summary><span class="song-number">${song.number ?? "–"}</span> ${escapeHtml(song.title)}
+          <span class="admin-meta">${voices.length} ${voices.length === 1 ? "Stimme" : "Stimmen"}${done ? `, ${done} zugeordnet` : ""}</span></summary>
+        <div class="assign-rows">
+          ${voices.map((v) => {
+            const o = z[v.key] ?? {};
+            const now = displayVariantsWith(v.files[0], song, z).map((x) => x.label).join(" / ");
+            return `
+            <div class="assign-row${z[v.key] ? " is-set" : ""}" data-key="${escapeHtml(v.key)}">
+              <div class="assign-name">
+                <button class="voice-chip" data-open="${escapeHtml(v.files[0].id)}" type="button" title="Öffnen">Öffnen</button>
+                <span><strong>${escapeHtml(v.base)}</strong>${v.files.length > 1 ? ` <span class="admin-meta">(${v.files.length} Seiten)</span>` : ""}
+                  <span class="admin-meta">wird angezeigt als: ${escapeHtml(now)}</span></span>
+              </div>
+              <div class="assign-fields">
+                <label class="field"><span>Instrument</span><select data-f="i0">${instOptions(o.inst?.[0])}</select></label>
+                <label class="field"><span>2. Instrument</span><select data-f="i1">${instOptions(o.inst?.[1])}</select></label>
+                <label class="field"><span>Stimme</span><select data-f="nr">${opts([1, 2, 3, 4, 5, 6], o.nr)}</select></label>
+                <label class="field"><span>Stimmung</span><select data-f="st">${opts(PITCH_OPTIONS, o.st)}</select></label>
+                ${z[v.key] ? `<button class="chip-x assign-clear" type="button" data-clear aria-label="Zuordnung entfernen" title="Zuordnung entfernen">×</button>` : ""}
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+      </details>`;
+  }).join("") || `<p class="hint">${onlyUnclear ? "Keine unklaren Stimmen gefunden. Mit „Alle Stimmen“ kannst du auch andere korrigieren." : "Nichts gefunden."}</p>`;
+}
+
+// Bezeichnung mit einer bestimmten (z. B. noch ungespeicherten) Zuordnung berechnen
+function displayVariantsWith(f, song, z) {
+  const o = overrideFor(f, z);
+  if (o) return overrideVariants(o, voiceBase(f.voice));
+  const bases = [...new Set(song.files.map((x) => voiceBase(x.voice)))];
+  return labelVariants(bases, { keepOriginal: isCollectionTitle(song.title) }).get(voiceBase(f.voice)) ?? [{ label: f.voice }];
+}
+
+function updateAssignment(row) {
+  const draft = ensureDraft();
+  const key = row.dataset.key;
+  const val = (f) => row.querySelector(`[data-f="${f}"]`).value;
+  const inst = [val("i0"), val("i1")].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i);
+  const entry = { inst, nr: val("nr"), st: val("st") };
+  if (!inst.length && !entry.nr && !entry.st) delete draft.zuordnung[key];
+  else draft.zuordnung[key] = entry;
+  renderAdmin();
+}
+
 function setAll(active) {
   const draft = ensureDraft();
   const keys = adminItems().map((it) => it.key);
@@ -341,6 +500,8 @@ function setAll(active) {
   else draft.stuecke = active ? new Set() : new Set(keys);
   renderAdmin();
 }
+
+const sortKeys = (o) => Object.fromEntries(Object.entries(o ?? {}).sort(([a], [b]) => a.localeCompare(b)));
 
 function sameSet(a, b) {
   if (a.size !== b.size) return false;
@@ -356,15 +517,18 @@ async function saveAdmin(button) {
     const draft = ensureDraft();
     const inaktiv = [...draft.stuecke];
     const instrumenteInaktiv = [...draft.instrumente];
+    const zuordnung = sortKeys(draft.zuordnung);
     state.statusFileId = await saveStatus({
-      ...CONFIG.STATUS_DATEI, fileId: state.statusFileId, inaktiv, instrumenteInaktiv, von: state.email,
+      ...CONFIG.STATUS_DATEI, fileId: state.statusFileId, inaktiv, instrumenteInaktiv, zuordnung, von: state.email,
     });
     state.inaktiv = new Set(inaktiv);
     state.instInaktiv = new Set(instrumenteInaktiv);
+    setZuordnung(JSON.parse(JSON.stringify(zuordnung)));
     state.statusInfo = { geaendert: new Date().toISOString(), von: state.email };
     cacheStatus();
     toast("Gespeichert. Alle sehen die Änderung beim nächsten Öffnen.");
     populateInstrumentFilter();
+    populateStimmeFilter();
     renderSongs();
   } catch (err) {
     handleError(err);
@@ -452,19 +616,39 @@ const voicePage = (label) => Number(/\(S\.(\d+)\)/.exec(label)?.[1] ?? 0);
 // weil die Stimmung nur gezeigt wird, wenn es dieselbe Stimme in mehreren Stimmungen gibt.
 let labelCache = new Map();
 let labelCacheFor = null;
+let labelCacheZ = -1;
+
+const niceInstrument = (name) => String(name).replace(" (frei besetzbar)", "");
+
+// Bezeichnung aus einer Zuordnung: "Flügelhorn 1 in B", bei mehreren Instrumenten je eins
+function overrideVariants(o, base) {
+  const insts = o.inst?.length ? o.inst : [null];
+  const part = parseVoice(base).part;
+  return insts.map((inst) => {
+    let label = inst ? niceInstrument(inst) : voiceBase(base);
+    if (o.nr) label += ` ${o.nr}`;
+    if (o.st) label += ` in ${o.st}`;
+    if (part) label += ` · ${part}`;
+    return { label, instrument: inst };
+  });
+}
 
 function labelsForFiles(files, title) {
   const bases = [...new Set(files.map((f) => voiceBase(f.voice)))];
   const isCollection = isCollectionTitle(title);
   const m = labelVariants(bases, { keepOriginal: isCollection });
-  for (const f of files) labelCache.set(f.id, m.get(voiceBase(f.voice)) ?? [{ label: f.voice, instrument: null }]);
+  for (const f of files) {
+    const o = overrideFor(f);
+    labelCache.set(f.id, o ? overrideVariants(o, voiceBase(f.voice)) : m.get(voiceBase(f.voice)) ?? [{ label: f.voice, instrument: null }]);
+  }
 }
 
 // Alle Bezeichnungen einer Datei (mehrere bei Stimmen für mehrere Instrumente)
 function displayVariants(f) {
-  if (labelCacheFor !== state.songs) {
+  if (labelCacheFor !== state.songs || labelCacheZ !== state.zVersion) {
     labelCache = new Map();
     labelCacheFor = state.songs;
+    labelCacheZ = state.zVersion;
     for (const song of state.songs) labelsForFiles(song.files, song.title);
   }
   if (!labelCache.has(f.id)) {
@@ -774,9 +958,30 @@ function bindEvents() {
   document.querySelectorAll("[data-admin-mode]").forEach((b) => b.addEventListener("click", () => {
     state.adminMode = b.dataset.adminMode;
     $("#admin-search").value = "";
-    $("#admin-filter").value = "alle";
+    const sel = $("#admin-filter");
+    if (state.adminMode !== "zuordnen" && sel.dataset.mode === "zuordnen") {
+      sel.innerHTML = `<option value="alle">Alle Stücke</option><option value="aktiv">Nur aktive</option><option value="inaktiv">Nur nicht aktive</option>`;
+      sel.dataset.mode = "";
+    }
+    sel.value = state.adminMode === "zuordnen" ? "unklar" : "alle";
     renderAdmin();
   }));
+  $("#assign-list").addEventListener("change", (e) => {
+    const row = e.target.closest(".assign-row");
+    if (row && e.target.matches("select")) updateAssignment(row);
+  });
+  $("#assign-list").addEventListener("click", (e) => {
+    const clear = e.target.closest("[data-clear]");
+    if (clear) {
+      delete ensureDraft().zuordnung[clear.closest(".assign-row").dataset.key];
+      renderAdmin();
+    }
+  });
+  $("#assign-list").addEventListener("toggle", (e) => {
+    const d = e.target.closest?.(".assign-song");
+    if (!d) return;
+    if (d.open) state.assignOpen.add(d.dataset.song); else state.assignOpen.delete(d.dataset.song);
+  }, true);
   $("#admin-list").addEventListener("change", (e) => {
     const box = e.target.closest("[data-toggle-key]");
     if (!box) return;
