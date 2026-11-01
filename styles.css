@@ -332,7 +332,9 @@ body.viewer-open { overflow: hidden; }
   box-sizing: border-box; background: #fff; color: #111; display: flex; flex-direction: column;
   font-family: "Helvetica Neue", Arial, sans-serif; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5); overflow: hidden;
 }
-.pp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6mm; border-bottom: 0.4mm solid #111; padding-bottom: 2mm; box-sizing: border-box; }
+.pp-brand { display: flex; align-items: center; gap: 4mm; min-width: 0; }
+.pp-brand img { height: 17mm; width: auto; display: block; }
+.pp-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 6mm; border-bottom: 0.4mm solid #111; padding-bottom: 2mm; box-sizing: border-box; }
 .pp-head h2 { margin: 0; font-size: 6mm; font-weight: 700; color: #111; }
 .pp-head span { font-size: 3.2mm; color: #555; white-space: nowrap; }
 .pp-cols { display: grid; align-content: start; padding-top: 3mm; box-sizing: border-box; }

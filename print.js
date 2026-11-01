@@ -6,7 +6,7 @@
 
 const PAGE = { hoch: { w: 210, h: 297 }, quer: { w: 297, h: 210 } }; // A4 in mm
 const MARGIN = 12;        // Seitenrand in mm
-const HEADER = 16;        // Kopfzeile in mm
+const HEADER = 22;        // Kopfzeile in mm (mit Logo)
 const FOOTER = 7;         // Fußzeile in mm
 const MAX_LINE = 7.5;     // größter Zeilenabstand in mm (gut lesbar am Notenständer)
 const MIN_LINE = 3.6;     // kleinster Zeilenabstand in mm
@@ -124,7 +124,7 @@ export function renderPrint() {
     pages.push(`
       <section class="print-page" style="width:${L.page.w}mm;height:${L.page.h}mm;padding:${MARGIN}mm">
         <header class="pp-head" style="height:${HEADER}mm">
-          <h2>${esc(opt.title)}</h2>
+          <div class="pp-brand"><img src="icons/logo.png" alt="" /><h2>${esc(opt.title)}</h2></div>
           <span>Stand ${date} · ${songs.length} Stücke</span>
         </header>
         <div class="pp-cols" style="height:${L.innerH}mm;grid-template-columns:repeat(${L.cols},1fr);column-gap:${COL_GAP}mm;font-size:${font}mm;--line:${L.line}mm">
