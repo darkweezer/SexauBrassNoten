@@ -228,3 +228,5 @@ input[type="search"]:focus, select:focus, button:focus-visible, summary:focus-vi
 .song-table .voices-row .all-voices { margin-top: 8px; }
 .song-table tr.is-inactive td:not(.switch-cell) { color: var(--muted); }
 .check { min-height: 36px; margin-bottom: 2px; }
+.song-table .quick-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.song-table .voice-chip.quick { min-height: 36px; padding: 4px 14px; font-size: 0.95rem; }

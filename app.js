@@ -507,13 +507,16 @@ function renderSongs() {
     else if (offAll && !on) meta += ` · ${offAll} offline`;
 
     const chips = (files) => files.map(voiceChip).join("");
+    // Instrument und Stimme gewählt: Schnellbuttons direkt in der Zeile ("Seite 1", "Seite 2")
+    const quick = instrument && stimme && !busy ? quickButtons(target) : "";
     const inactive = !song.orphan && !isActive(song);
     return `
       <tr class="song-row${inactive ? " is-inactive" : ""}${open ? " is-open" : ""}">
         <td class="num">${song.number ?? "–"}</td>
         <td class="song-cell" data-expand="${escapeHtml(song.id)}" role="button" tabindex="0" aria-expanded="${open}">
           <span class="song-name">${escapeHtml(song.title)}${inactive ? ` <span class="badge muted">nicht aktiv</span>` : ""}</span>
-          <span class="admin-meta">${escapeHtml(meta)}</span>
+          ${quick ? "" : `<span class="admin-meta">${escapeHtml(meta)}</span>`}
+          ${quick}
         </td>
         <td class="switch-cell">
           <label class="switch">
@@ -536,6 +539,21 @@ function renderSongs() {
         </td>
       </tr>` : ""}`;
   }).join("");
+}
+
+function quickButtons(files) {
+  if (!files.length) return "";
+  const page = (f) => /\(S\.(\d+)\)/.exec(f.voice)?.[1];
+  const base = (f) => f.voice.replace(/\s*\(S\.\d+\)/, "").trim();
+  const sameBase = files.every((f) => base(f) === base(files[0]));
+  const label = (f) => {
+    const p = page(f);
+    if (sameBase) return p ? `Seite ${p}` : "Öffnen";
+    return p ? `${base(f)} · S. ${p}` : base(f);
+  };
+  return `<span class="quick-row">${files.map((f) =>
+    `<button class="voice-chip quick" data-open="${escapeHtml(f.id)}" type="button" title="${escapeHtml(f.voice)}">${escapeHtml(label(f))}${state.offline.has(f.id) ? " ✓" : ""}</button>`
+  ).join("")}</span>`;
 }
 
 async function toggleOffline(songId, wantOn) {
@@ -654,10 +672,14 @@ function bindEvents() {
     if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
     renderSongs();
   };
-  $("#song-list").addEventListener("click", (e) => { const c = e.target.closest("[data-expand]"); if (c) expand(c); });
+  $("#song-list").addEventListener("click", (e) => {
+    if (e.target.closest("[data-open]")) return; // Schnellbutton öffnet nur die Note
+    const c = e.target.closest("[data-expand]");
+    if (c) expand(c);
+  });
   $("#song-list").addEventListener("keydown", (e) => {
     const c = e.target.closest("[data-expand]");
-    if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); expand(c); }
+    if (c && e.target === c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); expand(c); }
   });
   $("#login-btn").addEventListener("click", handleLoginClick);
   $("#logout-btn").addEventListener("click", () => {
