@@ -302,3 +302,56 @@ body.viewer-open { overflow: hidden; }
 .icon-btn .fs-exit { display: none; }
 .is-fullscreen .icon-btn .fs-enter { display: none; }
 .is-fullscreen .icon-btn .fs-exit { display: inline; }
+
+/* ---------- Drucken ---------- */
+.print-form { display: grid; gap: 12px; margin-bottom: 8px; }
+.print-form fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px 14px; margin: 0; display: grid; gap: 8px; background: var(--surface); }
+.print-form legend { color: var(--accent); font-weight: 600; padding: 0 6px; }
+.print-form input[type="text"] {
+  width: 100%; height: var(--tap); padding: 10px 14px; font: inherit; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.print-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.print-row select { padding: 10px 8px; }
+.segmented.small { margin: 0; }
+.segmented label { flex: 1; display: flex; }
+.segmented label input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented label span {
+  flex: 1; display: grid; place-items: center; min-height: 44px; color: var(--accent); font-weight: 600; cursor: pointer;
+}
+.segmented label + label span { border-left: 1px solid var(--accent); }
+.segmented label input:checked + span { background: var(--accent); color: var(--accent-ink); }
+.segmented label input:focus-visible + span { outline: 3px solid var(--text); outline-offset: -3px; }
+#print-btn { width: 100%; margin: 4px 0 14px; }
+
+.print-preview { position: relative; overflow: hidden; }
+.print-pages { transform-origin: top left; display: grid; gap: 16px; }
+
+/* Papier: immer hell, auch im dunklen Design */
+.print-page {
+  box-sizing: border-box; background: #fff; color: #111; display: flex; flex-direction: column;
+  font-family: "Helvetica Neue", Arial, sans-serif; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5); overflow: hidden;
+}
+.pp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6mm; border-bottom: 0.4mm solid #111; padding-bottom: 2mm; box-sizing: border-box; }
+.pp-head h2 { margin: 0; font-size: 6mm; font-weight: 700; color: #111; }
+.pp-head span { font-size: 3.2mm; color: #555; white-space: nowrap; }
+.pp-cols { display: grid; align-content: start; padding-top: 3mm; box-sizing: border-box; }
+.pp-col { list-style: none; margin: 0; padding: 0; min-width: 0; }
+.pp-row { display: flex; gap: 2.5mm; height: var(--line); align-items: center; border-bottom: 0.15mm solid #ddd; white-space: nowrap; overflow: hidden; }
+.pp-num { flex: 0 0 2.4em; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pp-title { overflow: hidden; text-overflow: ellipsis; }
+.pp-inactive { color: #999; }
+.pp-inactive-sample { color: #999; font-weight: 600; }
+.pp-foot { display: flex; justify-content: space-between; align-items: flex-end; font-size: 3mm; color: #666; margin-top: auto; }
+
+@media print {
+  html, body { background: #fff !important; padding: 0 !important; margin: 0 !important; }
+  .topbar, .view:not(#view-print), #view-print > :not(#print-preview), .toast, .viewer { display: none !important; }
+  main { max-width: none; padding: 0; margin: 0; }
+  #view-print { display: block !important; }
+  .print-preview { height: auto !important; overflow: visible; }
+  .print-pages { transform: none !important; width: auto !important; display: block; }
+  .print-page { box-shadow: none; break-after: page; page-break-after: always; }
+  .print-page:last-child { break-after: auto; page-break-after: auto; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

@@ -26,6 +26,7 @@
     </div>
     <nav class="tabs" aria-label="Hauptbereiche">
       <button class="tab is-active" data-view="search" type="button">Noten</button>
+      <button class="tab" data-view="print" type="button">Drucken</button>
       <button class="tab" data-view="help" type="button">Hilfe</button>
       <button class="tab hidden" id="tab-admin" data-view="admin" type="button">Verwaltung</button>
     </nav>
@@ -119,6 +120,50 @@
     </section>
 
     <!-- Hilfe -->
+    <!-- Druckansicht: Inhaltsverzeichnis für ausgedruckte Noten -->
+    <section id="view-print" class="view" aria-label="Drucken">
+      <h2>Inhaltsverzeichnis drucken</h2>
+      <p class="hint">Erstellt eine helle Liste mit Nummer und Stück zum Ausdrucken, z. B. für die Notenmappe.</p>
+      <form id="print-form" class="print-form" onsubmit="return false">
+        <fieldset>
+          <legend>Stücke</legend>
+          <label class="check"><input type="radio" name="scope" value="aktiv" checked /> <span>Nur aktive Stücke</span></label>
+          <label class="check"><input type="radio" name="scope" value="alle" /> <span id="print-scope-alle-label">Alle Stücke</span></label>
+          <label id="print-mark-row" class="check hidden"><input type="checkbox" name="markInactive" checked /> <span>Nicht aktive grau markieren</span></label>
+        </fieldset>
+        <fieldset>
+          <legend>Format</legend>
+          <div class="segmented small" role="radiogroup" aria-label="Ausrichtung">
+            <label><input type="radio" name="orientation" value="hoch" checked /><span>Hochkant</span></label>
+            <label><input type="radio" name="orientation" value="quer" /><span>Quer</span></label>
+          </div>
+          <div class="print-row">
+            <label class="field"><span>Seiten</span>
+              <select name="pages">
+                <option value="1" selected>1 Seite</option><option value="2">2 Seiten</option><option value="3">3 Seiten</option>
+                <option value="4">4 Seiten</option><option value="5">5 Seiten</option><option value="6">6 Seiten</option>
+              </select>
+            </label>
+            <label class="field"><span>Spalten</span>
+              <select name="cols">
+                <option value="0" selected>Auto</option><option value="1">1</option><option value="2">2</option>
+                <option value="3">3</option><option value="4">4</option>
+              </select>
+            </label>
+            <label class="field"><span>Sortierung</span>
+              <select name="sort"><option value="nr" selected>Nr.</option><option value="titel">Titel</option></select>
+            </label>
+          </div>
+          <label class="field"><span>Überschrift</span>
+            <input type="text" name="title" value="Sexau Brass · Notenverzeichnis" maxlength="80" />
+          </label>
+        </fieldset>
+      </form>
+      <p id="print-info" class="hint"></p>
+      <button id="print-btn" class="btn big" type="button">Drucken / als PDF speichern</button>
+      <div id="print-preview" class="print-preview"><div id="print-pages" class="print-pages"></div></div>
+    </section>
+
     <section id="view-help" class="view" aria-label="Hilfe">
       <h2>So installieren Sie die App</h2>
       <h3>Android (Chrome)</h3>
@@ -141,6 +186,8 @@
       </ol>
       <h2>Noten offline speichern</h2>
       <p>Oben das eigene Instrument (und bei Bedarf die Stimme) wählen. Dann beim Stück den Schalter „Offline“ einschalten. Die Noten sind danach auch ohne Internet da; mit dem Haken „Nur offline gespeicherte“ siehst du nur noch diese. Schalter wieder aus = vom Gerät entfernen. Ein Tipp auf den Titel zeigt die einzelnen Stimmen zum Öffnen.</p>
+      <h2>Inhaltsverzeichnis drucken</h2>
+      <p>Im Reiter „Drucken“ wählst du nur aktive oder alle Stücke, Hochkant oder Quer und auf wie viele Seiten es passen soll. Die Schrift passt sich automatisch an. „Drucken / als PDF speichern“ öffnet den Druckdialog des Browsers; dort kann man auch „Als PDF speichern“ wählen.</p>
       <h2>Vollbild</h2>
       <p>Der Knopf oben rechts neben dem Logo schaltet die Seite in den Vollbildmodus und wieder zurück (am PC auch mit Esc). Auf dem iPhone gibt es das für Webseiten nicht. Dort die App wie oben beschrieben zum Home-Bildschirm hinzufügen, dann startet sie ohne Browserleiste.</p>
       <h2>Noten ansehen und blättern</h2>

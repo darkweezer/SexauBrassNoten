@@ -10,6 +10,7 @@ import {
 } from "./drive.js";
 import { INSTRUMENT_ORDER, SONSTIGE, findInstruments } from "./instruments.js";
 import { openViewer } from "./viewer.js";
+import { initPrint, renderPrint } from "./print.js";
 
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
@@ -402,6 +403,7 @@ function showView(name) {
   document.querySelectorAll(".view").forEach((v) =>
     v.classList.toggle("is-active", v.id === `view-${name}`));
   if (name === "admin") renderAdmin();
+  if (name === "print") renderPrint();
 }
 
 function populateInstrumentFilter() {
@@ -781,6 +783,7 @@ function initFullscreen() {
 async function init() {
   bindEvents();
   initFullscreen();
+  initPrint({ getSongs: () => state.songs, isActive });
   try {
     await loadOfflineIndex();
   } catch (err) {
