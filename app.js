@@ -566,17 +566,11 @@ async function init() {
 
   try {
     await initAuth(CONFIG.GOOGLE_CLIENT_ID);
-    if (wasSignedInBefore()) {
-      // still neu anmelden; wenn das nicht klappt, erscheint der Anmelde-Knopf
-      await signIn({ interactive: false });
-      updateLoginUi();
-      await Promise.all([refreshSongs(), checkAdmin()]);
-    }
+    // Kein automatisches Anmelden beim Start: Browser blockieren Google-Fenster ohne Klick.
+    // Die zuletzt geladene Liste und offline gespeicherte Noten sind trotzdem sofort da.
   } catch (err) {
     updateLoginUi();
-    if (!(err instanceof NotLoggedInError) && !/abgebrochen|nicht möglich/.test(err.message)) {
-      toast(err.message, 4000);
-    }
+    toast(err.message, 5000);
   }
 }
 

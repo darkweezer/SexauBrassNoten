@@ -56,7 +56,8 @@ export function isSignedIn() {
  */
 export function signIn({ interactive = true, withWrite = false } = {}) {
   if (!tokenClient) return Promise.reject(new Error("Anmeldung ist noch nicht bereit."));
-  if (pendingToken) return pendingToken;
+  // Eine laufende stille Anfrage darf einen Klick auf „Anmelden“ nicht blockieren
+  if (pendingToken && !interactive) return pendingToken;
   pendingToken = new Promise((resolve, reject) => {
     tokenClient.callback = (resp) => {
       pendingToken = null;
@@ -70,7 +71,12 @@ export function signIn({ interactive = true, withWrite = false } = {}) {
     };
     tokenClient.error_callback = (err) => {
       pendingToken = null;
-      reject(new Error(err?.type === "popup_closed" ? "Anmeldung abgebrochen." : "Anmeldung nicht möglich."));
+      const texts = {
+        popup_closed: "Anmeldung abgebrochen.",
+        popup_failed_to_open: "Das Google-Fenster wurde blockiert. Bitte Pop-ups für diese Seite erlauben und erneut tippen.",
+      };
+      console.warn("Google-Anmeldung:", err);
+      reject(new Error(texts[err?.type] ?? `Anmeldung nicht möglich (${err?.type ?? "unbekannt"}).`));
     };
     const request = { prompt: interactive ? "" : "none" };
     if (withWrite) request.scope = `${SCOPE} ${FILE_SCOPE}`;
