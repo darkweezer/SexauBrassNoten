@@ -8,8 +8,9 @@ import {
   loadSongsFromDrive, downloadPdf, NotLoggedInError,
   getUserEmail, loadStatus, saveStatus,
 } from "./drive.js";
-import { INSTRUMENT_ORDER, SONSTIGE, findInstruments } from "./instruments.js";
+import { INSTRUMENT_ORDER, SONSTIGE, findInstruments, isCollectionTitle } from "./instruments.js";
 import { openViewer } from "./viewer.js";
+import { fullLabels } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
 const DB_NAME = "notenarchiv";
@@ -447,6 +448,33 @@ function matchesSearch(song, query) {
 const voiceBase = (label) => String(label).replace(/\s*\(S\.\d+\)/, "").trim();
 const voicePage = (label) => Number(/\(S\.(\d+)\)/.exec(label)?.[1] ?? 0);
 
+// Ausgeschriebene Bezeichnungen ("Trompete 1", "Horn 3/4 in Es · Part 4"), je Stück berechnet,
+// weil die Stimmung nur gezeigt wird, wenn es dieselbe Stimme in mehreren Stimmungen gibt.
+let labelCache = new Map();
+let labelCacheFor = null;
+
+function labelsForFiles(files, title) {
+  const bases = [...new Set(files.map((f) => voiceBase(f.voice)))];
+  const isCollection = isCollectionTitle(title);
+  const m = fullLabels(bases, { keepOriginal: isCollection });
+  for (const f of files) labelCache.set(f.id, m.get(voiceBase(f.voice)) ?? f.voice);
+}
+
+function displayLabel(f) {
+  if (labelCacheFor !== state.songs) {
+    labelCache = new Map();
+    labelCacheFor = state.songs;
+    for (const song of state.songs) labelsForFiles(song.files, song.title);
+  }
+  if (!labelCache.has(f.id)) {
+    // offline gespeicherte Noten, deren Stück nicht in der Liste steht
+    const e = state.offline.get(f.id);
+    const same = e ? [...state.offline.values()].filter((x) => (x.songId ?? x.title) === (e.songId ?? e.title)) : [f];
+    labelsForFiles(same, e?.title);
+  }
+  return labelCache.get(f.id) ?? voiceBase(f.voice);
+}
+
 function groupVoices(files) {
   const groups = new Map();
   for (const f of files) {
@@ -454,10 +482,10 @@ function groupVoices(files) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(f);
   }
-  return [...groups].map(([label, list]) => {
+  return [...groups].map(([, list]) => {
     list.sort((a, b) => voicePage(a.voice) - voicePage(b.voice));
-    return { label, first: list[0], files: list, offline: list.every((f) => state.offline.has(f.id)) };
-  });
+    return { label: displayLabel(list[0]), first: list[0], files: list, offline: list.every((f) => state.offline.has(f.id)) };
+  }).sort((a, b) => a.label.localeCompare(b.label, "de", { numeric: true }));
 }
 
 function voiceChips(files, cls = "voice-chip", labelFn = (g) => g.label) {
@@ -672,7 +700,7 @@ function openFile(fileId) {
   const title = song ? `${song.number != null ? song.number + " " : ""}${song.title}` : "Noten";
   openViewer({
     title,
-    files: group.map((f) => ({ id: f.id, label: voiceBase(f.voice) })),
+    files: group.map((f) => ({ id: f.id, label: displayLabel(f) })),
     start: Math.max(0, group.findIndex((f) => f.id === fileId)),
     loadBlob: async (id) => (await getPdfBlob(id)) ?? (await downloadPdf(id)),
     // Zoom je Seite wird pro Nutzer auf diesem Gerät gemerkt

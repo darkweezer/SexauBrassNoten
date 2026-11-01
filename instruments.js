@@ -58,6 +58,19 @@ for (const [name, keys] of INSTRUMENTE) for (const k of keys) LOOKUP.set(k, name
 // lange Schlüssel zuerst, damit "bassklar" vor "bass" greift
 const KEYS_BY_LENGTH = [...LOOKUP.keys()].sort((a, b) => b.length - a.length);
 
+// Wie lookupToken, liefert aber zusätzlich den getroffenen Schlüssel (z. B. "euph" -> Bariton / Euphonium)
+export function describeToken(token, allowSuffix = true) {
+  const t = normToken(token);
+  if (!t) return null;
+  if (LOOKUP.has(t)) return { name: LOOKUP.get(t), key: t };
+  if (allowSuffix) {
+    for (const k of KEYS_BY_LENGTH) {
+      if (t.length >= k.length + 4 && t.endsWith(k)) return { name: LOOKUP.get(k), key: k };
+    }
+  }
+  return null;
+}
+
 function lookupToken(token, allowSuffix = true) {
   const t = normToken(token);
   if (!t) return null;
@@ -99,4 +112,10 @@ export function findInstruments(tokens) {
   // "Solo_Klar" ist eine Klarinettenstimme, keine frei besetzbare Stimme
   const instruments = found.length > 1 ? found.filter((x) => x !== FREI) : found;
   return { instruments, index: first };
+}
+
+/** Sammelordner wie „Keyboard“: der Ordnername besteht nur aus Instrumentnamen (exakt, ohne Wortende-Suche). */
+export function isCollectionTitle(title) {
+  const tokens = String(title ?? "").split(/[_\s-]+/).filter(Boolean);
+  return tokens.length > 0 && tokens.every((t) => LOOKUP.has(normToken(t)));
 }

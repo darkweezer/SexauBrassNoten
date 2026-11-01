@@ -7,7 +7,7 @@
 //
 // Es gibt keinen eigenen Server. Wer die Drive-Ordner sehen darf, sieht die Noten.
 
-import { findInstruments, SONSTIGE } from "./instruments.js";
+import { findInstruments, isCollectionTitle, SONSTIGE } from "./instruments.js";
 
 const SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 // Nur für Verwaltende: darf ausschließlich Dateien ändern, die diese App selbst angelegt hat
@@ -283,7 +283,7 @@ export function parseFileName(fileName, songTitle) {
   // Alles vor dem ersten Instrument ist meist ein Rest vom Stücknamen ("Polka", "she does is magic"):
   // weglassen. Direkt davor stehende Stimmnummern, Tonarten oder „Part“ bleiben ("Es_Horn", "1_Stimme").
   // Ausnahme: Sammelordner wie „Keyboard“ enthalten verschiedene Stücke, dort bleibt der Name stehen.
-  const isCollection = Boolean(findInstruments(String(songTitle).split(/[_\s-]+/).filter(Boolean)));
+  const isCollection = isCollectionTitle(songTitle);
   if (found && found.index > 0 && !isCollection) {
     let from = found.index;
     while (from > 0 && KEEP_BEFORE.test(voiceTokens[from - 1])) from--;
