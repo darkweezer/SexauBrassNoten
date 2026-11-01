@@ -148,8 +148,8 @@ function buildDom(title) {
       <button class="btn secondary viewer-fallback hidden" type="button">Im Browser öffnen</button>
       <button class="btn viewer-login hidden" type="button">Neu anmelden</button>
     </div>
-    <button class="viewer-nav prev" type="button" aria-label="Vorherige Seite"><span>‹</span></button>
-    <button class="viewer-nav next" type="button" aria-label="Nächste Seite"><span>›</span></button>
+    <button class="viewer-nav prev" type="button" aria-label="Vorherige Seite"><span><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span></button>
+    <button class="viewer-nav next" type="button" aria-label="Nächste Seite"><span><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></button>
 `;
   $(".viewer-title strong", root).textContent = title;
   document.body.append(root);
@@ -254,6 +254,11 @@ async function render(v, pos = {}) {
   canvas.style.height = `${cssH}px`;
   canvas.style.transform = "";
   canvas.getContext("2d").drawImage(off, 0, 0);
+  // Pfeile an den oberen Rand der Notenseite setzen (nicht in den grauen Bereich darüber)
+  const stageTop = stage.getBoundingClientRect().top - v.root.getBoundingClientRect().top;
+  const pageTop = Math.max(0, (stage.clientHeight - cssH) / 2);
+  v.root.style.setProperty("--nav-top", `${Math.round(stageTop)}px`);
+  v.root.style.setProperty("--page-top", `${Math.round(pageTop)}px`);
 
   // Ausschnitt setzen
   const maxX = Math.max(0, stage.scrollWidth - stage.clientWidth);

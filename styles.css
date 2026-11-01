@@ -267,22 +267,23 @@ body.viewer-open { overflow: hidden; }
 /* leere Leinwand nicht als weißen Kasten zeigen, solange noch nichts gezeichnet ist */
 .viewer-canvas:not([style*="width"]) { display: none; }
 .viewer-nav {
-  position: absolute; top: 56px; bottom: 0; width: 22%; max-width: 140px; border: 0; background: transparent;
-  color: rgba(217, 180, 74, 0.0); font-size: 3rem; cursor: pointer; display: flex; align-items: center; padding: 0 10px;
-  transition: color 0.2s;
+  position: absolute; top: var(--nav-top, 56px); bottom: 0; width: 22%; max-width: 140px; border: 0; background: transparent;
+  cursor: pointer; display: flex; align-items: flex-start; padding: calc(var(--page-top, 0px) + 12px) 10px 0;
 }
 .viewer-nav.prev { left: 0; justify-content: flex-start; }
 .viewer-nav.next { right: 0; justify-content: flex-end; }
+/* Pfeile oben auf der Seite, Pfeil exakt mittig im Kreis */
 .viewer-nav span {
-  display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
-  background: rgba(14, 14, 16, 0.55); color: var(--accent); line-height: 1; opacity: 0.55;
+  display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(14, 14, 16, 0.6); color: var(--accent); opacity: 0.7;
 }
+.viewer-nav svg { display: block; }
 .viewer-nav:hover span, .viewer-nav:focus-visible span { opacity: 1; }
 .viewer-nav:disabled { visibility: hidden; }
 .viewer.is-loading .viewer-canvas { opacity: 0.4; }
 .viewer-btn:disabled { opacity: 0.35; }
 /* Beim Zoomen nur die runden Pfeile antippbar lassen, damit man am Rand verschieben kann */
-.viewer.is-zoomed .viewer-nav { pointer-events: none; }
+.viewer.is-zoomed .viewer-nav { pointer-events: none; padding-top: 12px; }
 .viewer.is-zoomed .viewer-nav span { pointer-events: auto; }
 .viewer-reset {
   flex: 0 0 auto; height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--accent);
