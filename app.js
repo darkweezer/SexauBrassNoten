@@ -8,7 +8,7 @@ import {
   loadSongsFromDrive, downloadPdf, NotLoggedInError,
   getUserEmail, loadStatus, saveStatus,
 } from "./drive.js";
-import { INSTRUMENT_ORDER } from "./instruments.js";
+import { INSTRUMENT_ORDER, SONSTIGE, findInstruments } from "./instruments.js";
 
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
@@ -16,6 +16,7 @@ const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, titl
 const MAX_OFFLINE_FILES = 150;  // Obergrenze, damit der Gerätespeicher nicht überläuft
 const LS_SONGS = "notenarchiv.stueckliste.v2"; // v2: Instrumente zusammengefasst
 const LS_INSTRUMENT = "notenarchiv.instrument";
+const LS_STIMME = "notenarchiv.stimme";
 const LS_STATUS = "notenarchiv.inaktiv";
 
 const state = {
@@ -56,8 +57,48 @@ function escapeHtml(text) {
 }
 
 // Eine Stimme kann für mehrere Instrumente gelten ("Oboe_Glockenspiel")
-const fileInstruments = (f) => f.instruments ?? [f.instrument];
+const fileInstruments = (f) => f.instruments ?? (f.instrument ? [f.instrument] : null)
+  ?? findInstruments(String(f.voice).split(" "))?.instruments ?? [SONSTIGE];
 const fileHas = (f, instrument) => fileInstruments(f).includes(instrument);
+
+// Stimmnummern aus dem Label lesen: "Trompete 2" -> [2], "Horn 3u 4 Es" -> [3, 4], "Tuba (S.1)" -> []
+// Seitenzahlen "(S.x)" und lange Zahlen (Scan-Nummern) zählen nicht.
+function voiceNumbers(f) {
+  if (!f._nums) {
+    const tokens = String(f.voice).replace(/\(S\.\d+\)/g, " ").split(/[\s/,+]+/);
+    const nums = new Set();
+    for (const t of tokens) {
+      const m = /^(\d)(?:[a-z]|u\d?)?$/i.exec(t);
+      if (m && m[1] !== "0") nums.add(Number(m[1]));
+      const both = /^(\d)u(\d)$/i.exec(t);
+      if (both) nums.add(Number(both[2]));
+    }
+    Object.defineProperty(f, "_nums", { value: [...nums].sort(), enumerable: false });
+  }
+  return f._nums;
+}
+
+// Passt eine Datei zu Instrument und Stimme? Stimmen ohne Nummer (z. B. "Tuba") gelten für alle Stimmen.
+function fileMatches(f, instrument, stimme) {
+  if (instrument && !fileHas(f, instrument)) return false;
+  if (!stimme) return true;
+  const nums = voiceNumbers(f);
+  return nums.length === 0 || nums.includes(Number(stimme));
+}
+
+// Auswahl „Stimme“ mit den Nummern füllen, die es für das gewählte Instrument gibt
+function fillStimmeSelect(select, files, instrument, stored) {
+  const nums = new Set();
+  for (const f of files) if (!instrument || fileHas(f, instrument)) for (const n of voiceNumbers(f)) nums.add(n);
+  const current = select.value || stored || "";
+  const list = [...nums].sort((a, b) => a - b);
+  select.innerHTML = `<option value="">Alle</option>` + list.map((n) => `<option value="${n}">${n}.</option>`).join("");
+  select.value = list.includes(Number(current)) ? String(current) : "";
+}
+
+function populateStimmeFilter() {
+  fillStimmeSelect($("#stimme-filter"), state.songs.flatMap((s) => s.files), $("#voice-filter").value, lsGet(LS_STIMME));
+}
 
 function lsGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
 function lsSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
@@ -378,6 +419,7 @@ function populateInstrumentFilter() {
     select.append(opt);
   }
   select.value = visible.includes(current) ? current : "";
+  populateStimmeFilter();
   return hidden;
 }
 
@@ -395,11 +437,13 @@ function voiceChip(f) {
 function renderSongs() {
   const query = $("#search").value.trim();
   const instrument = $("#voice-filter").value;
+  const stimme = $("#stimme-filter").value;
+  const filtering = Boolean(instrument || stimme);
   const showInactive = $("#show-inactive").checked;
 
   const visible = state.songs
     .filter((s) => matchesSearch(s, query))
-    .filter((s) => !instrument || s.files.some((f) => fileHas(f, instrument)))
+    .filter((s) => !filtering || s.files.some((f) => fileMatches(f, instrument, stimme)))
     .filter((s) => showInactive || isActive(s))
     .sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"));
 
@@ -414,12 +458,12 @@ function renderSongs() {
   }
 
   $("#song-list").innerHTML = visible.map((song) => {
-    const mine = instrument ? song.files.filter((f) => fileHas(f, instrument)) : [];
+    const mine = filtering ? song.files.filter((f) => fileMatches(f, instrument, stimme)) : [];
     const number = song.number != null ? `<span class="song-number">${song.number}</span> ` : "";
     return `
       <li class="song${isActive(song) ? "" : " is-inactive"}">
         <div class="song-title">${number}${escapeHtml(song.title)}${isActive(song) ? "" : ` <span class="badge muted">nicht aktiv</span>`}</div>
-        ${instrument ? `
+        ${filtering ? `
           <div class="voices">${mine.map(voiceChip).join("")}</div>
           <div class="song-actions">
             <button class="btn secondary" data-save-song="${escapeHtml(song.id)}" type="button">
@@ -438,6 +482,18 @@ function renderSongs() {
   }).join("");
 }
 
+// Instrument- und Stimmen-Auswahl im Reiter „Offline“: nur, was auf dem Gerät liegt
+function populateOfflineFilters(entries) {
+  const select = $("#off-instrument");
+  const current = select.value;
+  const names = [...new Set(entries.flatMap((e) => fileInstruments(e)))]
+    .sort((a, b) => instrumentRank(a) - instrumentRank(b) || a.localeCompare(b, "de"));
+  select.innerHTML = `<option value="">Alle Instrumente</option>` +
+    names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+  select.value = names.includes(current) ? current : "";
+  fillStimmeSelect($("#off-stimme"), entries, select.value, "");
+}
+
 function renderOffline() {
   const entries = [...state.offline.values()];
   const totalBytes = entries.reduce((sum, e) => sum + (e.size || 0), 0);
@@ -447,9 +503,15 @@ function renderOffline() {
     `${entries.length} von ${MAX_OFFLINE_FILES} PDFs gespeichert · ${formatBytes(totalBytes)} belegt`;
   $("#storage-bar").style.width = `${Math.min(100, (entries.length / MAX_OFFLINE_FILES) * 100)}%`;
 
+  populateOfflineFilters(entries);
+  const query = $("#off-search").value.trim();
+  const instrument = $("#off-instrument").value;
+  const stimme = $("#off-stimme").value;
+
   // Stimmen desselben Stücks in einem Kasten zusammenfassen, wie bei „Noten“
   const groups = new Map();
   for (const e of entries) {
+    if (!fileMatches(e, instrument, stimme)) continue;
     const key = e.songId ?? e.title;
     if (!groups.has(key)) {
       const song = state.songs.find((s) => s.id === e.songId);
@@ -457,7 +519,9 @@ function renderOffline() {
     }
     groups.get(key).files.push(e);
   }
-  const sorted = [...groups.values()].sort((a, b) =>
+  const sorted = [...groups.values()]
+    .filter((g) => matchesSearch({ title: g.title, number: g.number }, query))
+    .sort((a, b) =>
     (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"));
 
   $("#offline-list").innerHTML = sorted.map((g) => {
@@ -478,7 +542,7 @@ function renderOffline() {
             </span>`).join("")}
         </div>
         <div class="song-actions">
-          <button class="btn danger small" data-remove-group="${escapeHtml(files.map((e) => e.id).join(","))}" type="button">Ganzes Stück vom Gerät entfernen</button>
+          <button class="btn danger small" data-remove-group="${escapeHtml(files.map((e) => e.id).join(","))}" type="button">${instrument || stimme ? "Diese Stimmen vom Gerät entfernen" : "Ganzes Stück vom Gerät entfernen"}</button>
         </div>
       </li>`;
   }).join("");
@@ -564,8 +628,17 @@ function bindEvents() {
   $("#show-inactive-inst").addEventListener("change", () => { populateInstrumentFilter(); renderSongs(); });
   $("#voice-filter").addEventListener("change", () => {
     lsSet(LS_INSTRUMENT, $("#voice-filter").value);
+    populateStimmeFilter();
+    lsSet(LS_STIMME, $("#stimme-filter").value);
     renderSongs();
   });
+  $("#stimme-filter").addEventListener("change", () => {
+    lsSet(LS_STIMME, $("#stimme-filter").value);
+    renderSongs();
+  });
+  $("#off-search").addEventListener("input", renderOffline);
+  $("#off-instrument").addEventListener("change", () => { $("#off-stimme").value = ""; renderOffline(); });
+  $("#off-stimme").addEventListener("change", renderOffline);
   $("#login-btn").addEventListener("click", handleLoginClick);
   $("#logout-btn").addEventListener("click", () => {
     signOut();
@@ -586,9 +659,12 @@ function bindEvents() {
     if (saveBtn) {
       const song = state.songs.find((s) => s.id === saveBtn.dataset.saveSong);
       const instrument = $("#voice-filter").value;
+      const stimme = $("#stimme-filter").value;
       if (song) {
-        const files = song.files.filter((f) => !instrument || fileHas(f, instrument));
-        return saveFiles(files.map((f) => ({ id: f.id, songId: song.id, number: song.number, voice: f.voice, title: song.title })), saveBtn);
+        const files = song.files.filter((f) => fileMatches(f, instrument, stimme));
+        return saveFiles(files.map((f) => ({
+          id: f.id, songId: song.id, number: song.number, voice: f.voice, title: song.title, instruments: fileInstruments(f),
+        })), saveBtn);
       }
     }
 

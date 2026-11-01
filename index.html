@@ -33,15 +33,21 @@
         <p>Bitte melden Sie sich mit Ihrem Google-Konto an, um die Noten aus Google Drive zu sehen.</p>
         <button id="login-btn" class="btn big" type="button">Mit Google anmelden</button>
       </div>
-      <div class="toolbar">
+      <div class="toolbar three">
         <label class="field search">
           <span>Suche</span>
-          <input id="search" type="search" placeholder="Titel oder Nummer suchen" autocomplete="off" />
+          <input id="search" type="search" placeholder="Suchen" autocomplete="off" />
         </label>
         <label class="field">
-          <span>Mein Instrument</span>
+          <span>Instrument</span>
           <select id="voice-filter">
             <option value="">Alle Instrumente</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Stimme</span>
+          <select id="stimme-filter">
+            <option value="">Alle</option>
           </select>
         </label>
       </div>
@@ -105,6 +111,24 @@
       <div class="storage">
         <p id="storage-info" class="hint">Speicher wird ermittelt …</p>
         <div class="meter" aria-hidden="true"><span id="storage-bar"></span></div>
+      </div>
+      <div class="toolbar three">
+        <label class="field search">
+          <span>Suche</span>
+          <input id="off-search" type="search" placeholder="Suchen" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Instrument</span>
+          <select id="off-instrument">
+            <option value="">Alle Instrumente</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Stimme</span>
+          <select id="off-stimme">
+            <option value="">Alle</option>
+          </select>
+        </label>
       </div>
       <ul id="offline-list" class="song-list"></ul>
       <p id="offline-empty" class="hint hidden">Noch keine Noten auf diesem Gerät gespeichert.</p>

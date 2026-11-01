@@ -68,6 +68,11 @@ main { max-width: 760px; margin: 0 auto; padding: 16px; }
 /* Suche und Filter */
 .toolbar { display: grid; gap: 12px; margin-bottom: 8px; align-items: end; }
 @media (min-width: 560px) { .toolbar { grid-template-columns: 1fr 220px; } }
+/* Drei Felder nebeneinander: Suche | Instrument | Stimme (Suche schmaler) */
+.toolbar.three { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 0.75fr); gap: 8px; }
+@media (min-width: 560px) { .toolbar.three { grid-template-columns: minmax(0, 1fr) 240px 150px; gap: 12px; } }
+.toolbar.three input[type="search"], .toolbar.three select { padding: 10px 8px; text-overflow: ellipsis; }
+@media (max-width: 559px) { .toolbar.three .field { font-size: 0.85rem; } .toolbar.three input, .toolbar.three select { font-size: 0.95rem; } }
 
 input[type="search"], select {
   width: 100%; height: var(--tap); min-height: var(--tap);
