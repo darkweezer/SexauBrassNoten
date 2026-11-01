@@ -372,8 +372,11 @@ body.viewer-open { overflow: hidden; }
 .assign-name { display: flex; align-items: center; gap: 10px; }
 .assign-name .voice-chip { flex: 0 0 auto; }
 .assign-name .admin-meta { display: block; }
-.assign-fields { display: grid; grid-template-columns: 1.4fr 1.4fr 0.8fr 0.9fr auto; gap: 6px; align-items: end; }
+.assign-lines { display: grid; gap: 6px; }
+.assign-fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr) minmax(0, 1fr) 42px; gap: 6px; align-items: end; }
+.assign-add { justify-self: start; }
 .assign-fields .field { font-size: 0.8rem; }
 .assign-fields select { padding: 8px 6px; height: 42px; min-height: 42px; font-size: 0.9rem; }
 .assign-clear { height: 42px; border-radius: 50%; width: 42px; border-left: 1px solid var(--border); }
-@media (max-width: 559px) { .assign-fields { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 559px) { .assign-fields { grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.8fr) minmax(0, 0.9fr) 42px; } .assign-fields .field span { font-size: 0.75rem; } }
+.assign-fields + .assign-fields .field > span { display: none; }

@@ -41,6 +41,7 @@ const state = {
   zuordnung: {},      // von der Verwaltung korrigierte Stimmen: "<songId>|<Stimme>" -> { inst, nr, st }
   zVersion: 0,
   assignOpen: new Set(),
+  assignExtra: new Map(), // Verwaltung: Zeilen inkl. noch leerer Zeilen je Stimme
 };
 
 // ---------- Hilfsfunktionen ----------
@@ -83,22 +84,33 @@ function songIdOf(f) {
   return fileSongIndex.get(f.id);
 }
 const zuordnungKey = (songId, f) => `${songId}|${voiceBase(f.voice)}`;
+// Eine Zuordnung besteht aus Zeilen { inst, nr, st } – ein Blatt kann mehrere Instrumente UND Stimmen enthalten.
+// (Ältere Form { inst: [...], nr, st } wird in Zeilen umgerechnet.)
+function overrideLines(o) {
+  if (!o) return [];
+  if (Array.isArray(o.zeilen)) return o.zeilen.filter((z) => z.inst || z.nr || z.st);
+  const insts = o.inst?.length ? o.inst : [""];
+  return insts.map((inst) => ({ inst, nr: o.nr ?? "", st: o.st ?? "" })).filter((z) => z.inst || z.nr || z.st);
+}
+
 function overrideFor(f, z = state.zuordnung) {
-  const o = z?.[zuordnungKey(songIdOf(f), f)];
-  return o && (o.inst?.length || o.nr || o.st) ? o : null;
+  const lines = overrideLines(z?.[zuordnungKey(songIdOf(f), f)]);
+  return lines.length ? lines : null;
 }
 
 const fileInstruments = (f) => {
-  const o = overrideFor(f);
-  return o?.inst?.length ? o.inst : rawInstruments(f);
+  const lines = overrideFor(f);
+  const insts = lines ? [...new Set(lines.map((l) => l.inst).filter(Boolean))] : [];
+  return insts.length ? insts : rawInstruments(f);
 };
 const fileHas = (f, instrument) => fileInstruments(f).includes(instrument);
 
 // Stimmnummern aus dem Label lesen: "Trompete 2" -> [2], "Horn 3u 4 Es" -> [3, 4], "Tuba (S.1)" -> []
 // Seitenzahlen "(S.x)" und lange Zahlen (Scan-Nummern) zählen nicht.
 function voiceNumbers(f) {
-  const o = overrideFor(f);
-  if (o?.nr) return [Number(o.nr)];
+  const lines = overrideFor(f);
+  const nrs = lines ? [...new Set(lines.map((l) => Number(l.nr)).filter(Boolean))] : [];
+  if (nrs.length) return nrs.sort((a, b) => a - b);
   if (!f._nums) {
     const tokens = String(f.voice).replace(/\(S\.\d+\)/g, " ").split(/[\s/,+]+/);
     const nums = new Set();
@@ -120,6 +132,11 @@ const isSolo = (f) => /solo/i.test(String(f.voice));
 const showSolo = () => Boolean(document.querySelector("#show-solo")?.checked);
 
 function fileMatches(f, instrument, stimme) {
+  const lines = overrideFor(f);
+  if (lines && lines.some((l) => l.inst)) {
+    // zugeordnet: eine Zeile muss zu Instrument UND Stimme passen (Zeilen ohne Stimme gelten für alle)
+    return lines.some((l) => (!instrument || l.inst === instrument) && (!stimme || !l.nr || Number(l.nr) === Number(stimme)));
+  }
   if (instrument && !fileHas(f, instrument)) return false;
   if ((instrument || stimme) && isSolo(f) && !showSolo()) return false;
   if (!stimme) return true;
@@ -451,22 +468,27 @@ function renderAssign() {
           <span class="admin-meta">${voices.length} ${voices.length === 1 ? "Stimme" : "Stimmen"}${done ? `, ${done} zugeordnet` : ""}</span></summary>
         <div class="assign-rows">
           ${voices.map((v) => {
-            const o = z[v.key] ?? {};
+            const saved = overrideLines(z[v.key]);
+            // mindestens eine (leere) Zeile anzeigen; zusätzliche leere Zeilen aus dem Entwurf behalten
+            const lines = state.assignExtra.get(v.key) ?? (saved.length ? saved : [{ inst: "", nr: "", st: "" }]);
             const now = displayVariantsWith(v.files[0], song, z).map((x) => x.label).join(" / ");
             return `
-            <div class="assign-row${z[v.key] ? " is-set" : ""}" data-key="${escapeHtml(v.key)}">
+            <div class="assign-row${saved.length ? " is-set" : ""}" data-key="${escapeHtml(v.key)}">
               <div class="assign-name">
                 <button class="voice-chip" data-open="${escapeHtml(v.files[0].id)}" type="button" title="Öffnen">Öffnen</button>
                 <span><strong>${escapeHtml(v.base)}</strong>${v.files.length > 1 ? ` <span class="admin-meta">(${v.files.length} Seiten)</span>` : ""}
                   <span class="admin-meta">wird angezeigt als: ${escapeHtml(now)}</span></span>
               </div>
-              <div class="assign-fields">
-                <label class="field"><span>Instrument</span><select data-f="i0">${instOptions(o.inst?.[0])}</select></label>
-                <label class="field"><span>2. Instrument</span><select data-f="i1">${instOptions(o.inst?.[1])}</select></label>
-                <label class="field"><span>Stimme</span><select data-f="nr">${opts([1, 2, 3, 4, 5, 6], o.nr)}</select></label>
-                <label class="field"><span>Stimmung</span><select data-f="st">${opts(PITCH_OPTIONS, o.st)}</select></label>
-                ${z[v.key] ? `<button class="chip-x assign-clear" type="button" data-clear aria-label="Zuordnung entfernen" title="Zuordnung entfernen">×</button>` : ""}
+              <div class="assign-lines">
+                ${lines.map((l, i) => `
+                  <div class="assign-fields" data-line="${i}">
+                    <label class="field"><span>Instrument</span><select data-f="inst">${instOptions(l.inst)}</select></label>
+                    <label class="field"><span>Stimme</span><select data-f="nr">${opts([1, 2, 3, 4, 5, 6], l.nr)}</select></label>
+                    <label class="field"><span>Stimmung</span><select data-f="st">${opts(PITCH_OPTIONS, l.st)}</select></label>
+                    <button class="chip-x assign-clear" type="button" data-remove-line="${i}" aria-label="Zeile entfernen" title="Zeile entfernen">×</button>
+                  </div>`).join("")}
               </div>
+              <button class="btn secondary small assign-add" type="button" data-add-line>+ Zeile</button>
             </div>`;
           }).join("")}
         </div>
@@ -482,15 +504,28 @@ function displayVariantsWith(f, song, z) {
   return labelVariants(bases, { keepOriginal: isCollectionTitle(song.title) }).get(voiceBase(f.voice)) ?? [{ label: f.voice }];
 }
 
-function updateAssignment(row) {
+function readLines(row) {
+  return [...row.querySelectorAll(".assign-fields")].map((el) => ({
+    inst: el.querySelector('[data-f="inst"]').value,
+    nr: el.querySelector('[data-f="nr"]').value,
+    st: el.querySelector('[data-f="st"]').value,
+  }));
+}
+
+// Zeilen einer Stimme in den Entwurf übernehmen (leere Zeilen bleiben nur in der Anzeige)
+function storeLines(row, lines) {
   const draft = ensureDraft();
   const key = row.dataset.key;
-  const val = (f) => row.querySelector(`[data-f="${f}"]`).value;
-  const inst = [val("i0"), val("i1")].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i);
-  const entry = { inst, nr: val("nr"), st: val("st") };
-  if (!inst.length && !entry.nr && !entry.st) delete draft.zuordnung[key];
-  else draft.zuordnung[key] = entry;
+  const filled = lines.filter((l) => l.inst || l.nr || l.st);
+  if (filled.length) draft.zuordnung[key] = { zeilen: filled };
+  else delete draft.zuordnung[key];
+  if (lines.length > filled.length || !lines.length) state.assignExtra.set(key, lines.length ? lines : [{ inst: "", nr: "", st: "" }]);
+  else state.assignExtra.delete(key);
   renderAdmin();
+}
+
+function updateAssignment(row) {
+  storeLines(row, readLines(row));
 }
 
 function setAll(active) {
@@ -524,6 +559,7 @@ async function saveAdmin(button) {
     state.inaktiv = new Set(inaktiv);
     state.instInaktiv = new Set(instrumenteInaktiv);
     setZuordnung(JSON.parse(JSON.stringify(zuordnung)));
+    state.assignExtra.clear();
     state.statusInfo = { geaendert: new Date().toISOString(), von: state.email };
     cacheStatus();
     toast("Gespeichert. Alle sehen die Änderung beim nächsten Öffnen.");
@@ -621,16 +657,20 @@ let labelCacheZ = -1;
 const niceInstrument = (name) => String(name).replace(" (frei besetzbar)", "");
 
 // Bezeichnung aus einer Zuordnung: "Flügelhorn 1 in B", bei mehreren Instrumenten je eins
-function overrideVariants(o, base) {
-  const insts = o.inst?.length ? o.inst : [null];
+function overrideVariants(lines, base) {
   const part = parseVoice(base).part;
-  return insts.map((inst) => {
-    let label = inst ? niceInstrument(inst) : voiceBase(base);
-    if (o.nr) label += ` ${o.nr}`;
-    if (o.st) label += ` in ${o.st}`;
+  const seen = new Set();
+  const out = [];
+  for (const l of lines) {
+    let label = l.inst ? niceInstrument(l.inst) : voiceBase(base);
+    if (l.nr) label += ` ${l.nr}`;
+    if (l.st) label += ` in ${l.st}`;
     if (part) label += ` · ${part}`;
-    return { label, instrument: inst };
-  });
+    if (seen.has(label)) continue;
+    seen.add(label);
+    out.push({ label, instrument: l.inst || null, nr: l.nr ? Number(l.nr) : null });
+  }
+  return out;
 }
 
 function labelsForFiles(files, title) {
@@ -679,6 +719,12 @@ function groupVoices(files, all = false) {
     let variants = displayVariants(list[0]);
     if (selected && variants.length > 1) {
       const mine = variants.filter((v) => v.instrument === selected);
+      if (mine.length) variants = mine;
+    }
+    // ebenso bei gewählter Stimme nur die passende Zeile („Trompete 2“ statt auch „Trompete 1“)
+    const stimmeSel = all ? "" : document.querySelector("#stimme-filter")?.value ?? "";
+    if (stimmeSel && variants.length > 1) {
+      const mine = variants.filter((v) => v.nr == null || v.nr === Number(stimmeSel));
       if (mine.length) variants = mine;
     }
     for (const v of variants) out.push({ label: v.label, first: list[0], files: list, offline });
@@ -952,7 +998,7 @@ function bindEvents() {
   $("#admin-search").addEventListener("input", renderAdmin);
   $("#admin-filter").addEventListener("change", renderAdmin);
   $("#admin-save").addEventListener("click", (e) => saveAdmin(e.currentTarget));
-  $("#admin-reset").addEventListener("click", () => { state.draft = null; renderAdmin(); });
+  $("#admin-reset").addEventListener("click", () => { state.draft = null; state.assignExtra.clear(); renderAdmin(); });
   $("#admin-all-on").addEventListener("click", () => setAll(true));
   $("#admin-all-off").addEventListener("click", () => setAll(false));
   document.querySelectorAll("[data-admin-mode]").forEach((b) => b.addEventListener("click", () => {
@@ -971,10 +1017,19 @@ function bindEvents() {
     if (row && e.target.matches("select")) updateAssignment(row);
   });
   $("#assign-list").addEventListener("click", (e) => {
-    const clear = e.target.closest("[data-clear]");
-    if (clear) {
-      delete ensureDraft().zuordnung[clear.closest(".assign-row").dataset.key];
-      renderAdmin();
+    const row = e.target.closest(".assign-row");
+    if (!row) return;
+    if (e.target.closest("[data-add-line]")) {
+      const lines = readLines(row);
+      const last = lines[lines.length - 1] ?? {};
+      // neue Zeile: Stimmung der letzten übernehmen, das ist meist gleich
+      storeLines(row, [...lines, { inst: "", nr: "", st: last.st ?? "" }]);
+    }
+    const rm = e.target.closest("[data-remove-line]");
+    if (rm) {
+      const lines = readLines(row);
+      lines.splice(Number(rm.dataset.removeLine), 1);
+      storeLines(row, lines);
     }
   });
   $("#assign-list").addEventListener("toggle", (e) => {
