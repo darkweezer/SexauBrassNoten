@@ -259,7 +259,11 @@ const norm = (s) => s.toLowerCase()
 // "AltSax1" -> "AltSax 1", "Seite2" -> "Seite 2"
 const spaceDigits = (s) => s.replace(/([A-Za-zäöüÄÖÜß])(\d)/g, "$1 $2");
 
-const PITCH = /^(b|c|es|f|in)$/i;
+// Wortteile, die vor dem Instrument stehen dürfen: Tonart, Stimmnummer, „Part 1“, „Super Part“
+const KEEP_BEFORE = /^(b|c|es|f|in|\d+[a-z]?|part\d*[a-z]?|super)$/i;
+
+// "AltSax1_Seite2" -> "AltSax 1 (S.2)"
+const shortLabel = (s) => spaceDigits(s).replace(/\bseite\s*(\d+)/gi, "(S.$1)").replace(/\s+/g, " ").trim();
 
 export function parseFileName(fileName, songTitle) {
   const base = String(fileName).replace(/\.pdf$/i, "");
@@ -276,15 +280,17 @@ export function parseFileName(fileName, songTitle) {
 
   const found = findInstruments(voiceTokens);
 
-  // Passte der Titel nicht zum Ordnernamen (z. B. "Phantom_AltSax1" im Ordner "The Phantom of the opera"),
-  // beginnt die Stimmenbezeichnung beim ersten Instrument. Eine Tonart davor ("Es_Horn") bleibt dabei.
-  if (found && i === 0 && found.index > 0) {
+  // Alles vor dem ersten Instrument ist meist ein Rest vom Stücknamen ("Polka", "she does is magic"):
+  // weglassen. Direkt davor stehende Stimmnummern, Tonarten oder „Part“ bleiben ("Es_Horn", "1_Stimme").
+  // Ausnahme: Sammelordner wie „Keyboard“ enthalten verschiedene Stücke, dort bleibt der Name stehen.
+  const isCollection = Boolean(findInstruments(String(songTitle).split(/[_\s-]+/).filter(Boolean)));
+  if (found && found.index > 0 && !isCollection) {
     let from = found.index;
-    if (PITCH.test(tokens[from - 1])) from--;
-    voiceTokens = tokens.slice(from);
+    while (from > 0 && KEEP_BEFORE.test(voiceTokens[from - 1])) from--;
+    voiceTokens = voiceTokens.slice(from);
   }
 
-  const voice = spaceDigits(voiceTokens.join(" ")) || base;
+  const voice = shortLabel(voiceTokens.join(" ")) || base;
   const instruments = found?.instruments ?? [SONSTIGE];
   return { voice, instrument: instruments[0], instruments };
 }
