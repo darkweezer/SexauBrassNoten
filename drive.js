@@ -181,9 +181,21 @@ export async function loadSongsFromDrive(rootFolders) {
 }
 
 /** Lädt eine PDF-Datei als Blob. */
-export async function downloadPdf(fileId) {
+export async function downloadPdf(fileId, onProgress) {
   const res = await driveFetch(`${API}/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`);
-  return res.blob();
+  if (!onProgress || !res.body?.getReader) return res.blob();
+  // Stückweise lesen, damit ein Fortschritt angezeigt werden kann
+  const reader = res.body.getReader();
+  const parts = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    loaded += value.byteLength;
+    onProgress(loaded);
+  }
+  return new Blob(parts, { type: res.headers.get("Content-Type") || "application/pdf" });
 }
 
 /** Google-Adresse der angemeldeten Person (für die Verwaltungs-Berechtigung). */

@@ -792,6 +792,7 @@ function voiceChips(files, cls = "voice-chip", labelFn = (g) => g.label, all = f
 // Stücke als kompakte Tabelle wie in der Verwaltung. Der Schalter speichert die Stimmen offline.
 const offlineEntry = (song, f) => ({
   id: f.id, songId: song.id, number: song.number, voice: f.voice, title: song.title, instruments: fileInstruments(f),
+  size: f.size || 0,
 });
 
 // Welche Stimmen ein Schalter betrifft: die gefilterten, sonst alle
@@ -864,9 +865,9 @@ function renderSongs() {
     const allTargets = visible.flatMap((song) => targetFiles(song));
     const missing = allTargets.filter((f) => !state.offline.has(f.id)).length;
     bulk.disabled = missing === 0;
-    bulk.textContent = missing === 0
+    setBulkText(bulk, missing === 0
       ? "✓ Alle angezeigten Stücke sind offline"
-      : `Alle herunterladen (${visible.length} ${visible.length === 1 ? "Stück" : "Stücke"}, ${missing} ${missing === 1 ? "Datei" : "Dateien"})`;
+      : `Alle herunterladen (${visible.length} ${visible.length === 1 ? "Stück" : "Stücke"}, ${missing} ${missing === 1 ? "Datei" : "Dateien"})`);
   }
 
   $("#song-list").innerHTML = visible.map((song) => {
@@ -938,15 +939,29 @@ async function saveAllVisible() {
   state.bulkSaving = true;
   btn.disabled = true;
   btn.classList.add("is-progress");
-  btn.style.setProperty("--progress", "0%");
+  // Fortschritt nach Datenmenge (Dateigröße aus Drive); unbekannte Größe zählt wie eine mittlere Datei
+  const known = jobs.filter((j) => j.size > 0);
+  const avg = known.length ? known.reduce((a, j) => a + j.size, 0) / known.length : 1;
+  const weight = (j) => j.size > 0 ? j.size : avg;
+  const total = jobs.reduce((a, j) => a + weight(j), 0);
+  let doneBytes = 0;
   let done = 0;
+  const show = (fraction) => {
+    const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
+    setBulkProgress(btn, pct, `Lade ${Math.min(done + 1, jobs.length)} von ${jobs.length} … ${pct} %`);
+  };
+  show(0);
   try {
     for (const file of jobs) {
-      btn.textContent = `Lade ${done + 1} von ${jobs.length} … ${Math.round((done / jobs.length) * 100)} %`;
-      const blob = await downloadPdf(file.id);
+      const w = weight(file);
+      const blob = await downloadPdf(file.id, (loaded) => {
+        const part = file.size > 0 ? Math.min(loaded / file.size, 1) * w : 0;
+        show((doneBytes + part) / total);
+      });
       await savePdf(file, blob);
       done++;
-      btn.style.setProperty("--progress", `${Math.round((done / jobs.length) * 100)}%`);
+      doneBytes += w;
+      show(doneBytes / total);
       if (done % 5 === 0) renderSongs();
     }
     toast(`${done} ${done === 1 ? "Datei" : "Dateien"} offline gespeichert`);
@@ -956,10 +971,34 @@ async function saveAllVisible() {
   } finally {
     state.bulkSaving = false;
     btn.classList.remove("is-progress");
-    btn.style.removeProperty("--progress");
     renderSongs();
     updateStorageEstimate();
   }
+}
+
+// Knopf „Alle herunterladen“: eigener Balken (Element) und Text, damit kein Knopf-Stil den Balken überdeckt
+function bulkParts(btn) {
+  let bar = btn.querySelector(".save-all-bar");
+  let label = btn.querySelector(".save-all-text");
+  if (!bar || !label) {
+    btn.textContent = "";
+    bar = document.createElement("span");
+    bar.className = "save-all-bar";
+    label = document.createElement("span");
+    label.className = "save-all-text";
+    btn.append(bar, label);
+  }
+  return { bar, label };
+}
+function setBulkText(btn, text) {
+  const { bar, label } = bulkParts(btn);
+  bar.style.width = "0%";
+  label.textContent = text;
+}
+function setBulkProgress(btn, pct, text) {
+  const { bar, label } = bulkParts(btn);
+  bar.style.width = `${pct}%`;
+  label.textContent = text;
 }
 
 async function toggleOffline(songId, wantOn) {
