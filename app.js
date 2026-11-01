@@ -514,9 +514,11 @@ function renderSongs() {
       <tr class="song-row${inactive ? " is-inactive" : ""}${open ? " is-open" : ""}">
         <td class="num">${song.number ?? "–"}</td>
         <td class="song-cell" data-expand="${escapeHtml(song.id)}" role="button" tabindex="0" aria-expanded="${open}">
-          <span class="song-name">${escapeHtml(song.title)}${inactive ? ` <span class="badge muted">nicht aktiv</span>` : ""}</span>
+          <div class="song-line">
+            <span class="song-name">${escapeHtml(song.title)}${inactive ? ` <span class="badge muted">nicht aktiv</span>` : ""}</span>
+            ${quick}
+          </div>
           ${quick ? "" : `<span class="admin-meta">${escapeHtml(meta)}</span>`}
-          ${quick}
         </td>
         <td class="switch-cell">
           <label class="switch">
