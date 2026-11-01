@@ -22,6 +22,8 @@ const LS_STATUS = "notenarchiv.inaktiv";
 const state = {
   songs: [],          // [{ id, number, title, files: [{ id, name, voice, instrument, instruments, size }] }]
   offline: new Map(), // fileId -> Eintrag aus IndexedDB (ohne Blob)
+  saving: new Map(),  // songId -> Fortschrittstext beim Offline-Speichern
+  expanded: new Set(), // aufgeklappte Stücke
   loading: false,
   inaktiv: new Set(), // Ordner-IDs der Stücke, die gerade nicht gespielt werden
   statusFileId: null,
@@ -396,7 +398,6 @@ function showView(name) {
     t.classList.toggle("is-active", t.dataset.view === name));
   document.querySelectorAll(".view").forEach((v) =>
     v.classList.toggle("is-active", v.id === `view-${name}`));
-  if (name === "offline") renderOffline();
   if (name === "admin") renderAdmin();
 }
 
@@ -434,118 +435,125 @@ function voiceChip(f) {
   return `<button class="voice-chip" data-open="${escapeHtml(f.id)}" type="button">${escapeHtml(f.voice)}${off ? " ✓" : ""}</button>`;
 }
 
+// Stücke als kompakte Tabelle wie in der Verwaltung. Der Schalter speichert die Stimmen offline.
+const offlineEntry = (song, f) => ({
+  id: f.id, songId: song.id, number: song.number, voice: f.voice, title: song.title, instruments: fileInstruments(f),
+});
+
+// Welche Stimmen ein Schalter betrifft: die gefilterten, sonst alle
+function targetFiles(song) {
+  const instrument = $("#voice-filter").value;
+  const stimme = $("#stimme-filter").value;
+  return instrument || stimme ? song.files.filter((f) => fileMatches(f, instrument, stimme)) : song.files;
+}
+
+// Offline gespeicherte Noten, deren Stück nicht (mehr) in der Liste steht, trotzdem zeigen
+function offlineOnlySongs() {
+  const known = new Set(state.songs.map((s) => s.id));
+  const extra = new Map();
+  for (const e of state.offline.values()) {
+    if (known.has(e.songId)) continue;
+    const key = e.songId ?? e.title;
+    if (!extra.has(key)) extra.set(key, { id: key, number: e.number ?? null, title: e.title, files: [], orphan: true });
+    extra.get(key).files.push(e);
+  }
+  return [...extra.values()];
+}
+
 function renderSongs() {
   const query = $("#search").value.trim();
   const instrument = $("#voice-filter").value;
   const stimme = $("#stimme-filter").value;
   const filtering = Boolean(instrument || stimme);
+  const onlyOffline = $("#only-offline").checked;
   const showInactive = $("#show-inactive").checked;
+  const hasOffline = (s) => s.files.some((f) => state.offline.has(f.id));
 
-  const visible = state.songs
+  const pool = onlyOffline ? [...state.songs, ...offlineOnlySongs()] : state.songs;
+  const visible = pool
     .filter((s) => matchesSearch(s, query))
     .filter((s) => !filtering || s.files.some((f) => fileMatches(f, instrument, stimme)))
-    .filter((s) => showInactive || isActive(s))
+    .filter((s) => !onlyOffline || hasOffline(s))
+    .filter((s) => onlyOffline || showInactive || isActive(s))
     .sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"));
 
   const hiddenCount = state.songs.filter((s) => !isActive(s)).length;
-  $("#inactive-toggle").classList.toggle("hidden", hiddenCount === 0);
+  $("#inactive-toggle").classList.toggle("hidden", hiddenCount === 0 || onlyOffline);
   $("#inactive-label").textContent = hiddenCount === 1 ? "Auch 1 nicht aktives Stück zeigen" : `Auch ${hiddenCount} nicht aktive Stücke zeigen`;
 
+  const offCount = state.offline.size;
+  const offBytes = [...state.offline.values()].reduce((sum, e) => sum + (e.size || 0), 0);
+  $("#only-offline-label").textContent = offCount
+    ? `Nur offline gespeicherte (${offCount} · ${formatBytes(offBytes)})`
+    : "Nur offline gespeicherte (noch keine)";
+
   if (!state.loading) {
-    $("#result-count").textContent = state.songs.length === 0
+    $("#result-count").textContent = pool.length === 0
       ? "Noch keine Noten geladen."
       : visible.length === 1 ? "1 Stück gefunden" : `${visible.length} Stücke gefunden`;
   }
+  $("#song-table").classList.toggle("hidden", visible.length === 0);
 
   $("#song-list").innerHTML = visible.map((song) => {
-    const mine = filtering ? song.files.filter((f) => fileMatches(f, instrument, stimme)) : [];
-    const number = song.number != null ? `<span class="song-number">${song.number}</span> ` : "";
+    const target = song.orphan ? song.files : targetFiles(song);
+    const offTarget = target.filter((f) => state.offline.has(f.id)).length;
+    const offAll = song.files.filter((f) => state.offline.has(f.id)).length;
+    const on = target.length > 0 && offTarget === target.length;
+    const busy = state.saving.get(song.id);
+    const open = state.expanded.has(song.id);
+
+    let meta = filtering ? target.map((f) => f.voice).join(" · ") : `${song.files.length} ${song.files.length === 1 ? "Stimme" : "Stimmen"}`;
+    if (busy) meta = busy;
+    else if (offAll && !on) meta += ` · ${offAll} offline`;
+
+    const chips = (files) => files.map(voiceChip).join("");
+    const inactive = !song.orphan && !isActive(song);
     return `
-      <li class="song${isActive(song) ? "" : " is-inactive"}">
-        <div class="song-title">${number}${escapeHtml(song.title)}${isActive(song) ? "" : ` <span class="badge muted">nicht aktiv</span>`}</div>
-        ${filtering ? `
-          <div class="voices">${mine.map(voiceChip).join("")}</div>
-          <div class="song-actions">
-            <button class="btn secondary" data-save-song="${escapeHtml(song.id)}" type="button">
-              ${mine.length === 1 ? "Offline speichern" : "Meine Stimmen offline speichern"}
-            </button>
-          </div>
-          <details class="all-voices">
-            <summary>Alle Stimmen (${song.files.length})</summary>
-            <div class="voices">${song.files.map(voiceChip).join("")}</div>
-          </details>` : `
-          <details class="all-voices">
-            <summary>Stimmen anzeigen (${song.files.length})</summary>
-            <div class="voices">${song.files.map(voiceChip).join("")}</div>
-          </details>`}
-      </li>`;
+      <tr class="song-row${inactive ? " is-inactive" : ""}${open ? " is-open" : ""}">
+        <td class="num">${song.number ?? "–"}</td>
+        <td class="song-cell" data-expand="${escapeHtml(song.id)}" role="button" tabindex="0" aria-expanded="${open}">
+          <span class="song-name">${escapeHtml(song.title)}${inactive ? ` <span class="badge muted">nicht aktiv</span>` : ""}</span>
+          <span class="admin-meta">${escapeHtml(meta)}</span>
+        </td>
+        <td class="switch-cell">
+          <label class="switch">
+            <input type="checkbox" data-offline-song="${escapeHtml(song.id)}" ${on ? "checked" : ""} ${busy ? "disabled" : ""} />
+            <span class="slider" aria-hidden="true"></span>
+            <span class="visually-hidden">${escapeHtml(song.title)} offline speichern</span>
+          </label>
+        </td>
+      </tr>
+      ${open ? `
+      <tr class="voices-row">
+        <td></td>
+        <td colspan="2">
+          <div class="voices">${chips(target)}</div>
+          ${filtering && !song.orphan && target.length < song.files.length ? `
+            <details class="all-voices">
+              <summary>Alle Stimmen (${song.files.length})</summary>
+              <div class="voices">${chips(song.files)}</div>
+            </details>` : ""}
+        </td>
+      </tr>` : ""}`;
   }).join("");
 }
 
-// Instrument- und Stimmen-Auswahl im Reiter „Offline“: nur, was auf dem Gerät liegt
-function populateOfflineFilters(entries) {
-  const select = $("#off-instrument");
-  const current = select.value;
-  const names = [...new Set(entries.flatMap((e) => fileInstruments(e)))]
-    .sort((a, b) => instrumentRank(a) - instrumentRank(b) || a.localeCompare(b, "de"));
-  select.innerHTML = `<option value="">Alle Instrumente</option>` +
-    names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
-  select.value = names.includes(current) ? current : "";
-  fillStimmeSelect($("#off-stimme"), entries, select.value, "");
-}
-
-function renderOffline() {
-  const entries = [...state.offline.values()];
-  const totalBytes = entries.reduce((sum, e) => sum + (e.size || 0), 0);
-
-  $("#offline-empty").classList.toggle("hidden", entries.length > 0);
-  $("#storage-info").textContent =
-    `${entries.length} von ${MAX_OFFLINE_FILES} PDFs gespeichert · ${formatBytes(totalBytes)} belegt`;
-  $("#storage-bar").style.width = `${Math.min(100, (entries.length / MAX_OFFLINE_FILES) * 100)}%`;
-
-  populateOfflineFilters(entries);
-  const query = $("#off-search").value.trim();
-  const instrument = $("#off-instrument").value;
-  const stimme = $("#off-stimme").value;
-
-  // Stimmen desselben Stücks in einem Kasten zusammenfassen, wie bei „Noten“
-  const groups = new Map();
-  for (const e of entries) {
-    if (!fileMatches(e, instrument, stimme)) continue;
-    const key = e.songId ?? e.title;
-    if (!groups.has(key)) {
-      const song = state.songs.find((s) => s.id === e.songId);
-      groups.set(key, { songId: e.songId, title: song?.title ?? e.title, number: e.number ?? song?.number ?? null, files: [] });
-    }
-    groups.get(key).files.push(e);
+async function toggleOffline(songId, wantOn) {
+  const song = state.songs.find((s) => s.id === songId) ?? offlineOnlySongs().find((s) => s.id === songId);
+  if (!song) return;
+  const target = song.orphan ? song.files : targetFiles(song);
+  if (!wantOn) {
+    for (const f of target) if (state.offline.has(f.id)) await removePdf(f.id);
+    toast(target.length === 1 ? "Vom Gerät entfernt" : "Stimmen vom Gerät entfernt");
+    renderSongs();
+    return;
   }
-  const sorted = [...groups.values()]
-    .filter((g) => matchesSearch({ title: g.title, number: g.number }, query))
-    .sort((a, b) =>
-    (a.number ?? 1e9) - (b.number ?? 1e9) || a.title.localeCompare(b.title, "de"));
-
-  $("#offline-list").innerHTML = sorted.map((g) => {
-    const size = g.files.reduce((sum, e) => sum + (e.size || 0), 0);
-    const number = g.number != null ? `<span class="song-number">${g.number}</span> ` : "";
-    const files = g.files.sort((a, b) => a.voice.localeCompare(b.voice, "de", { numeric: true }));
-    return `
-      <li class="song">
-        <div>
-          <div class="song-title">${number}${escapeHtml(g.title)}</div>
-          <div class="song-meta">${files.length === 1 ? "1 Stimme" : `${files.length} Stimmen`} · ${formatBytes(size)}</div>
-        </div>
-        <div class="voices">
-          ${files.map((e) => `
-            <span class="chip-group">
-              <button class="voice-chip" data-open="${escapeHtml(e.id)}" type="button">${escapeHtml(e.voice)}</button>
-              <button class="chip-x" data-remove="${escapeHtml(e.id)}" type="button" aria-label="${escapeHtml(e.voice)} vom Gerät entfernen">×</button>
-            </span>`).join("")}
-        </div>
-        <div class="song-actions">
-          <button class="btn danger small" data-remove-group="${escapeHtml(files.map((e) => e.id).join(","))}" type="button">${instrument || stimme ? "Diese Stimmen vom Gerät entfernen" : "Ganzes Stück vom Gerät entfernen"}</button>
-        </div>
-      </li>`;
-  }).join("");
+  const missing = target.filter((f) => !state.offline.has(f.id));
+  if (missing.length > 8 && !confirm(`Alle ${missing.length} Stimmen von „${song.title}“ offline speichern?\nTipp: Erst oben dein Instrument wählen.`)) {
+    renderSongs();
+    return;
+  }
+  await saveFiles(song.id, missing.map((f) => offlineEntry(song, f)));
 }
 
 // ---------- Aktionen ----------
@@ -566,8 +574,7 @@ async function openFile(fileId) {
   }
 }
 
-async function saveFiles(fileEntries, button) {
-  if (button) button.disabled = true;
+async function saveFiles(songId, fileEntries) {
   let saved = 0;
   try {
     for (const file of fileEntries) {
@@ -576,18 +583,19 @@ async function saveFiles(fileEntries, button) {
         toast(`Maximal ${MAX_OFFLINE_FILES} Noten offline. Bitte zuerst Noten entfernen.`, 4000);
         break;
       }
-      if (button) button.textContent = `Speichere ${saved + 1} von ${fileEntries.length} …`;
+      state.saving.set(songId, `Speichere ${saved + 1} von ${fileEntries.length} …`);
+      renderSongs();
       const blob = await downloadPdf(file.id);
       await savePdf(file, blob);
       saved++;
     }
     if (saved) toast(`${saved} ${saved === 1 ? "Datei" : "Dateien"} offline gespeichert`);
-    else toast("Alles ist bereits offline verfügbar");
   } catch (err) {
     handleError(err);
   } finally {
-    if (button) button.disabled = false;
+    state.saving.delete(songId);
     renderSongs();
+    updateStorageEstimate();
   }
 }
 
@@ -636,9 +644,21 @@ function bindEvents() {
     lsSet(LS_STIMME, $("#stimme-filter").value);
     renderSongs();
   });
-  $("#off-search").addEventListener("input", renderOffline);
-  $("#off-instrument").addEventListener("change", () => { $("#off-stimme").value = ""; renderOffline(); });
-  $("#off-stimme").addEventListener("change", renderOffline);
+  $("#only-offline").addEventListener("change", renderSongs);
+  $("#song-list").addEventListener("change", (e) => {
+    const box = e.target.closest("[data-offline-song]");
+    if (box) toggleOffline(box.dataset.offlineSong, box.checked);
+  });
+  const expand = (cell) => {
+    const id = cell.dataset.expand;
+    if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
+    renderSongs();
+  };
+  $("#song-list").addEventListener("click", (e) => { const c = e.target.closest("[data-expand]"); if (c) expand(c); });
+  $("#song-list").addEventListener("keydown", (e) => {
+    const c = e.target.closest("[data-expand]");
+    if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); expand(c); }
+  });
   $("#login-btn").addEventListener("click", handleLoginClick);
   $("#logout-btn").addEventListener("click", () => {
     signOut();
@@ -654,36 +674,6 @@ function bindEvents() {
   document.body.addEventListener("click", async (event) => {
     const openBtn = event.target.closest("[data-open]");
     if (openBtn) return openFile(openBtn.dataset.open);
-
-    const saveBtn = event.target.closest("[data-save-song]");
-    if (saveBtn) {
-      const song = state.songs.find((s) => s.id === saveBtn.dataset.saveSong);
-      const instrument = $("#voice-filter").value;
-      const stimme = $("#stimme-filter").value;
-      if (song) {
-        const files = song.files.filter((f) => fileMatches(f, instrument, stimme));
-        return saveFiles(files.map((f) => ({
-          id: f.id, songId: song.id, number: song.number, voice: f.voice, title: song.title, instruments: fileInstruments(f),
-        })), saveBtn);
-      }
-    }
-
-    const removeGroup = event.target.closest("[data-remove-group]");
-    if (removeGroup) {
-      for (const id of removeGroup.dataset.removeGroup.split(",")) await removePdf(id);
-      toast("Stück vom Gerät entfernt");
-      renderOffline();
-      renderSongs();
-      return;
-    }
-
-    const removeBtn = event.target.closest("[data-remove]");
-    if (removeBtn) {
-      await removePdf(removeBtn.dataset.remove);
-      toast("Vom Gerät entfernt");
-      renderOffline();
-      renderSongs();
-    }
   });
 }
 
@@ -691,7 +681,7 @@ async function updateStorageEstimate() {
   if (navigator.storage?.estimate) {
     const { usage, quota } = await navigator.storage.estimate();
     if (usage && quota) {
-      $("#storage-info").title = `Browser-Speicher: ${formatBytes(usage)} von ${formatBytes(quota)}`;
+      $("#only-offline-toggle").title = `Browser-Speicher: ${formatBytes(usage)} von ${formatBytes(quota)}`;
     }
   }
   // Browser bitten, die Offline-Noten nicht automatisch zu löschen
@@ -721,7 +711,7 @@ async function init() {
   }
 
   if (!navigator.onLine) {
-    if (state.offline.size) showView("offline");
+    if (state.offline.size) { $("#only-offline").checked = true; renderSongs(); }
     return;
   }
 

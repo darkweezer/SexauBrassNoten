@@ -20,7 +20,6 @@
     </div>
     <nav class="tabs" aria-label="Hauptbereiche">
       <button class="tab is-active" data-view="search" type="button">Noten</button>
-      <button class="tab" data-view="offline" type="button">Offline</button>
       <button class="tab" data-view="help" type="button">Hilfe</button>
       <button class="tab hidden" id="tab-admin" data-view="admin" type="button">Verwaltung</button>
     </nav>
@@ -55,12 +54,19 @@
         <input type="checkbox" id="show-inactive-inst" />
         <span id="inactive-inst-label">Auch nicht aktive Instrumente zeigen</span>
       </label>
-      <p id="result-count" class="hint" aria-live="polite"></p>
+      <label id="only-offline-toggle" class="check">
+        <input type="checkbox" id="only-offline" />
+        <span id="only-offline-label">Nur offline gespeicherte</span>
+      </label>
       <label id="inactive-toggle" class="check hidden">
         <input type="checkbox" id="show-inactive" />
         <span id="inactive-label">Auch nicht aktive Stücke zeigen</span>
       </label>
-      <ul id="song-list" class="song-list"></ul>
+      <p id="result-count" class="hint" aria-live="polite"></p>
+      <table id="song-table" class="admin-table song-table">
+        <thead><tr><th class="num">Nr.</th><th>Stück</th><th class="switch-cell">Offline</th></tr></thead>
+        <tbody id="song-list"></tbody>
+      </table>
     </section>
 
     <!-- Verwaltung (nur für eingetragene Verwaltende sichtbar) -->
@@ -106,34 +112,6 @@
       </div>
     </section>
 
-    <!-- Offline -->
-    <section id="view-offline" class="view" aria-label="Offline verfügbar">
-      <div class="storage">
-        <p id="storage-info" class="hint">Speicher wird ermittelt …</p>
-        <div class="meter" aria-hidden="true"><span id="storage-bar"></span></div>
-      </div>
-      <div class="toolbar three">
-        <label class="field search">
-          <span>Suche</span>
-          <input id="off-search" type="search" placeholder="Suchen" autocomplete="off" />
-        </label>
-        <label class="field">
-          <span>Instrument</span>
-          <select id="off-instrument">
-            <option value="">Alle Instrumente</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Stimme</span>
-          <select id="off-stimme">
-            <option value="">Alle</option>
-          </select>
-        </label>
-      </div>
-      <ul id="offline-list" class="song-list"></ul>
-      <p id="offline-empty" class="hint hidden">Noch keine Noten auf diesem Gerät gespeichert.</p>
-    </section>
-
     <!-- Hilfe -->
     <section id="view-help" class="view" aria-label="Hilfe">
       <h2>So installieren Sie die App</h2>
@@ -156,7 +134,7 @@
         <li>„Installieren“ wählen.</li>
       </ol>
       <h2>Noten offline speichern</h2>
-      <p>Oben unter „Mein Instrument“ das eigene Instrument wählen. Dann bei einem Stück auf „Meine Stimmen offline speichern“ tippen. Die Noten bleiben danach auch ohne Internet im Bereich „Offline“ verfügbar.</p>
+      <p>Oben das eigene Instrument (und bei Bedarf die Stimme) wählen. Dann beim Stück den Schalter „Offline“ einschalten. Die Noten sind danach auch ohne Internet da; mit dem Haken „Nur offline gespeicherte“ siehst du nur noch diese. Schalter wieder aus = vom Gerät entfernen. Ein Tipp auf den Titel zeigt die einzelnen Stimmen zum Öffnen.</p>
       <h2>Konto</h2>
       <p>Neue Stücke erscheinen automatisch, sobald sie in Google Drive liegen.</p>
       <div class="song-actions">
