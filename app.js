@@ -605,6 +605,11 @@ function openFile(fileId) {
     start: Math.max(0, group.findIndex((f) => f.id === fileId)),
     loadBlob: async (id) => (await getPdfBlob(id)) ?? (await downloadPdf(id)),
     // Zoom je Seite wird pro Nutzer auf diesem Gerät gemerkt
+    reauth: async () => {
+      await signIn({ interactive: true });
+      updateLoginUi();
+      checkAdmin();
+    },
     zoomKey: `notenapp.zoom.${(state.email || lsGet(LS_USER) || "gast").toLowerCase()}`,
   }).catch(handleError);
 }

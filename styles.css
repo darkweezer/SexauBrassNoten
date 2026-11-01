@@ -262,7 +262,10 @@ body.viewer-open { overflow: hidden; }
 }
 .viewer-canvas { display: block; background: #fff; box-shadow: 0 0 12px rgba(0, 0, 0, 0.5); will-change: transform; }
 .viewer-status { position: absolute; inset: auto 16px 50% 16px; text-align: center; color: var(--silver); }
-.viewer-fallback { position: absolute; top: calc(50% + 30px); }
+.viewer-fallback, .viewer-login { position: absolute; top: calc(50% + 30px); left: 50%; transform: translateX(-50%); z-index: 2; }
+.viewer-status { z-index: 2; }
+/* leere Leinwand nicht als weißen Kasten zeigen, solange noch nichts gezeichnet ist */
+.viewer-canvas:not([style*="width"]) { display: none; }
 .viewer-nav {
   position: absolute; top: 56px; bottom: 0; width: 22%; max-width: 140px; border: 0; background: transparent;
   color: rgba(217, 180, 74, 0.0); font-size: 3rem; cursor: pointer; display: flex; align-items: center; padding: 0 10px;

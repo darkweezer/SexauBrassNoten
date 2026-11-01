@@ -40,12 +40,13 @@ const pageKey = (p) => `${p.fileId}:${p.num}`;
  * @param {number} opts.start       Index der Datei, mit der begonnen wird
  * @param {(id:string)=>Promise<Blob>} opts.loadBlob  lädt eine Datei (offline oder aus Drive)
  * @param {string} opts.zoomKey     localStorage-Schlüssel für die Zoom-Einstellungen dieses Nutzers
+ * @param {()=>Promise<void>} [opts.reauth]  neu bei Google anmelden (muss aus einem Klick heraus laufen)
  */
-export async function openViewer({ title, files, start = 0, loadBlob, zoomKey = "notenapp.zoom" }) {
+export async function openViewer({ title, files, start = 0, loadBlob, zoomKey = "notenapp.zoom", reauth }) {
   closeViewer();
   const root = buildDom(title);
   const v = {
-    root, files, loadBlob, zoomKey,
+    root, files, loadBlob, zoomKey, reauth, start,
     zoomStore: loadZoomStore(zoomKey),
     pages: [],        // { fileIdx, fileId, doc, num, label }
     docs: new Map(),  // fileIdx -> PDFDocument
@@ -58,22 +59,29 @@ export async function openViewer({ title, files, start = 0, loadBlob, zoomKey = 
   current = v;
   history.pushState({ viewer: true }, "");
   bindControls(v);
-  setStatus(v, "Lade Noten …");
+  await loadAll(v);
+}
 
+async function loadAll(v) {
+  const { files, start, root } = v;
+  setStatus(v, "Lade Noten …");
+  $(".viewer-fallback", root).classList.add("hidden");
+  $(".viewer-login", root).classList.add("hidden");
   try {
     const lib = await loadPdfJs();
     // Startdatei zuerst, damit sofort etwas zu sehen ist; die anderen danach
     const order = [start, ...files.map((_, i) => i).filter((i) => i !== start)];
     for (const idx of order) {
       if (current !== v) return;
-      const blob = await loadBlob(files[idx].id);
+      if (v.docs.has(idx)) continue;
+      const blob = await v.loadBlob(files[idx].id);
       v.blobs.set(idx, blob);
       const data = new Uint8Array(await blob.arrayBuffer());
       const doc = await lib.getDocument({ data, isEvalSupported: false }).promise;
       v.docs.set(idx, doc);
       insertPages(v, idx, doc);
-      if (idx === start) {
-        v.index = v.pages.findIndex((p) => p.fileIdx === start);
+      if (idx === start || v.pages.length === doc.numPages) {
+        v.index = Math.max(0, v.pages.findIndex((p) => p.fileIdx === start));
         await showPage(v);
       } else {
         updateBar(v);
@@ -81,9 +89,17 @@ export async function openViewer({ title, files, start = 0, loadBlob, zoomKey = 
     }
   } catch (err) {
     if (current !== v) return;
+    if (err?.name === "NotLoggedInError" && v.reauth) {
+      // Anmeldung abgelaufen: Knopf zeigen, der aus dem Klick heraus neu anmeldet und weiterlädt
+      setStatus(v, v.pages.length ? "" : "Die Anmeldung bei Google ist abgelaufen.");
+      $(".viewer-login", root).classList.remove("hidden");
+      return;
+    }
     console.error(err);
-    setStatus(v, err?.message ? `Die Noten konnten nicht angezeigt werden: ${err.message}` : "Die Noten konnten nicht angezeigt werden.");
-    $(".viewer-fallback", root).classList.remove("hidden");
+    if (!v.pages.length) {
+      setStatus(v, err?.message ? `Die Noten konnten nicht angezeigt werden: ${err.message}` : "Die Noten konnten nicht angezeigt werden.");
+      if (v.blobs.size) $(".viewer-fallback", root).classList.remove("hidden");
+    }
   }
 }
 
@@ -127,6 +143,7 @@ function buildDom(title) {
       <div class="viewer-inner"><canvas class="viewer-canvas"></canvas></div>
       <p class="viewer-status"></p>
       <button class="btn secondary viewer-fallback hidden" type="button">Im Browser öffnen</button>
+      <button class="btn viewer-login hidden" type="button">Neu anmelden</button>
     </div>
     <button class="viewer-nav prev" type="button" aria-label="Vorherige Seite"><span>‹</span></button>
     <button class="viewer-nav next" type="button" aria-label="Nächste Seite"><span>›</span></button>
@@ -296,6 +313,15 @@ function bindControls(v) {
   $(".viewer-zoom-in", root).addEventListener("click", () => setZoom(v, v.zoom * 1.25));
   $(".viewer-zoom-out", root).addEventListener("click", () => setZoom(v, v.zoom / 1.25));
   $(".viewer-reset", root).addEventListener("click", () => setZoom(v, 1));
+  $(".viewer-login", root).addEventListener("click", async () => {
+    try {
+      await v.reauth();
+    } catch (err) {
+      setStatus(v, err?.message ?? "Anmeldung fehlgeschlagen.");
+      return;
+    }
+    loadAll(v);
+  });
   $(".viewer-fallback", root).addEventListener("click", () => {
     const blob = v.blobs.values().next().value;
     if (!blob) return;
