@@ -114,3 +114,9 @@ einfach in `instruments.js` beim passenden Instrument ergänzen. Stimmen für me
 
 - Offline-Speicher ist pro Gerät. Auf iOS sollte die App unbedingt zum Home-Bildschirm hinzugefügt werden.
 - Beim Löschen einer PDF im Offline-Bereich wird nur die lokale Kopie entfernt, nicht die Datei in Drive.
+
+## PDF-Betrachter
+
+Noten öffnen sich im eingebauten Betrachter (`viewer.js`). Er nutzt pdf.js von Mozilla (Apache-2.0-Lizenz),
+das unverändert im Ordner `vendor/pdfjs` liegt (Version 4.10.38, „legacy“-Fassung für ältere iPads), damit es auch offline funktioniert.
+Blättern: wischen, Rand antippen, Pfeiltasten oder Fußpedal. Mehrere Seiten-Dateien einer Stimme werden zu einer Seitenfolge verbunden.

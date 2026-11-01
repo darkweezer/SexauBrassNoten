@@ -1,7 +1,7 @@
 // Service Worker: hält die App-Hülle offline verfügbar.
 // PDFs werden NICHT hier gecacht, sondern über IndexedDB (siehe app.js).
 
-const CACHE_VERSION = "notenarchiv-v10";
+const CACHE_VERSION = "notenarchiv-v11";
 const APP_SHELL = [
   "./",
   "index.html",
@@ -10,6 +10,9 @@ const APP_SHELL = [
   "config.js",
   "drive.js",
   "instruments.js",
+  "viewer.js",
+  "vendor/pdfjs/pdf.min.mjs",
+  "vendor/pdfjs/pdf.worker.min.mjs",
   "manifest.webmanifest",
   "icons/icon-192.png",
   "icons/icon-512.png",

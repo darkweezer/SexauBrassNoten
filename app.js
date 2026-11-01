@@ -9,6 +9,7 @@ import {
   getUserEmail, loadStatus, saveStatus,
 } from "./drive.js";
 import { INSTRUMENT_ORDER, SONSTIGE, findInstruments } from "./instruments.js";
+import { openViewer } from "./viewer.js";
 
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
@@ -578,20 +579,30 @@ async function toggleOffline(songId, wantOn) {
 
 // ---------- Aktionen ----------
 
-async function openFile(fileId) {
-  // Fenster sofort im Klick öffnen, sonst blockieren iPhone und iPad es
-  const win = window.open("", "_blank");
-  try {
-    const offlineBlob = await getPdfBlob(fileId);
-    const blob = offlineBlob ?? (await downloadPdf(fileId));
-    const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
-    if (win) win.location.href = url;
-    else window.location.href = url;
-    setTimeout(() => URL.revokeObjectURL(url), 120_000);
-  } catch (err) {
-    win?.close();
-    handleError(err);
+// Note im eingebauten Betrachter öffnen. Gehört die Datei zu einer Stimme mit mehreren Seiten-Dateien
+// ("Trp 2 (S.1)", "Trp 2 (S.2)"), werden alle zusammen gezeigt und man kann durchblättern.
+const voiceBase = (label) => String(label).replace(/\s*\(S\.\d+\)/, "").trim();
+const voicePage = (label) => Number(/\(S\.(\d+)\)/.exec(label)?.[1] ?? 0);
+
+function openFile(fileId) {
+  let song = state.songs.find((s) => s.files.some((f) => f.id === fileId));
+  let files = song?.files;
+  const entry = state.offline.get(fileId);
+  if (!song && entry) {
+    files = [...state.offline.values()].filter((e) => (e.songId ?? e.title) === (entry.songId ?? entry.title));
+    song = { title: entry.title, number: entry.number };
   }
+  const file = files?.find((f) => f.id === fileId) ?? { id: fileId, voice: entry?.voice ?? "" };
+  const group = (files ?? [file])
+    .filter((f) => voiceBase(f.voice) === voiceBase(file.voice))
+    .sort((a, b) => voicePage(a.voice) - voicePage(b.voice));
+  const title = song ? `${song.number != null ? song.number + " " : ""}${song.title}` : "Noten";
+  openViewer({
+    title,
+    files: group.map((f) => ({ id: f.id, label: f.voice })),
+    start: Math.max(0, group.findIndex((f) => f.id === fileId)),
+    loadBlob: async (id) => (await getPdfBlob(id)) ?? (await downloadPdf(id)),
+  }).catch(handleError);
 }
 
 async function saveFiles(songId, fileEntries) {
