@@ -127,3 +127,10 @@ Noten öffnen sich im eingebauten Betrachter (`viewer.js`). Er nutzt pdf.js von 
 das unverändert im Ordner `vendor/pdfjs` liegt (Version 4.10.38, „legacy“-Fassung für ältere iPads), damit es auch offline funktioniert.
 Blättern: wischen, Rand antippen, Pfeiltasten oder Fußpedal. Zoomen: zwei Finger, Doppeltipp, − / + oder Strg + Mausrad;
 Zoom und Ausschnitt werden je Seite und Nutzer im Browser gespeichert (`localStorage`, Schlüssel `notenapp.zoom.<E-Mail>`) und beim Öffnen wiederhergestellt. Mehrere Seiten-Dateien einer Stimme werden zu einer Seitenfolge verbunden.
+
+**Drucken:** Der Drucker-Knopf zeichnet alle Seiten der geöffneten Stimme mit etwa 200 dpi als Bilder in einen Druckbereich und öffnet den Druckdialog
+(funktioniert so auch auf iPad und Android).
+
+**Standard-Zoom (nur Admins):** Der Knopf „Zoom“ mit Speichersymbol speichert Zoom und Ausschnitt der aktuellen Seite in der Status-Datei
+(Feld `zoom`, Schlüssel `<Datei-ID>:<Seite>`, mit Zeitstempel `t`). Beim Öffnen gilt, was neuer ist: der Standard oder der eigene Zoom der Person.
+Bei ganzer Seite gedrückt, wird der Standard entfernt. Speichern braucht wie die Verwaltung Bearbeiterrechte im ersten Noten-Ordner.
