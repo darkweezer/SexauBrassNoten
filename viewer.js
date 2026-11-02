@@ -73,6 +73,7 @@ export async function openViewer({ title, files, start = 0, loadBlob, zoomKey = 
   current = v;
   history.pushState({ viewer: true }, "");
   bindControls(v);
+  watchBattery(v);
   await loadAll(v);
 }
 
@@ -130,10 +131,43 @@ export function closeViewer(fromHistory = false) {
   window.removeEventListener("keydown", v.onKey);
   window.removeEventListener("resize", v.onResize);
   window.removeEventListener("popstate", v.onPop);
+  v.stopBattery?.();
   removePrintSheet();
   v.root.remove();
   document.body.classList.remove("viewer-open");
   if (!fromHistory && history.state?.viewer) history.back();
+}
+
+/* Akkustand des Geräts oben in der Leiste. Nur Chrome/Edge (auch Android) kennen
+   navigator.getBattery(); Safari (iPhone/iPad) und Firefox nicht – dort bleibt die Anzeige weg.
+   Am PC ohne Akku meldet Chrome „lädt, 100 %“ – auch dann blenden wir sie aus. */
+async function watchBattery(v) {
+  if (typeof navigator.getBattery !== "function") return;
+  let bat;
+  try { bat = await navigator.getBattery(); } catch { return; }
+  if (current !== v) return;
+  const el = $(".viewer-battery", v.root);
+  const show = () => {
+    const pct = Math.round(bat.level * 100);
+    const noBattery = bat.charging && pct === 100 && bat.dischargingTime === Infinity && bat.chargingTime === 0;
+    el.classList.toggle("hidden", noBattery);
+    el.classList.toggle("is-low", !bat.charging && pct <= 20);
+    el.classList.toggle("is-charging", bat.charging);
+    const label = `Akku ${pct} %${bat.charging ? ", lädt" : ""}`;
+    el.setAttribute("aria-label", label);
+    el.title = label;
+    el.innerHTML = batteryIcon(bat.level, bat.charging) + `<span>${pct} %</span>`;
+  };
+  show();
+  const events = ["levelchange", "chargingchange", "chargingtimechange", "dischargingtimechange"];
+  for (const e of events) bat.addEventListener(e, show);
+  v.stopBattery = () => { for (const e of events) bat.removeEventListener(e, show); };
+}
+
+function batteryIcon(level, charging) {
+  const w = Math.max(1, Math.round(15 * level));
+  const bolt = charging ? `<path d="M11.5 7.5l-3 5h3l-1 4 3.5-5.5h-3l1-3.5z" fill="currentColor" stroke="none" class="bolt"/>` : "";
+  return `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 10.5v3" stroke-linecap="round"/><rect x="3.5" y="8.5" width="${w}" height="7" rx="0.8" fill="currentColor" stroke="none" class="level"/>${bolt}</svg>`;
 }
 
 function insertPages(v, fileIdx, doc) {
@@ -155,6 +189,7 @@ function buildDom(title) {
       <div class="viewer-title"><strong></strong><span class="viewer-page"></span></div>
       <button class="viewer-reset is-off" type="button" aria-label="Zoom zurücksetzen">↺ Zoom</button>
       <div class="viewer-tools">
+      <span class="viewer-battery hidden" role="img"></span>
       <button class="viewer-btn viewer-print" type="button" aria-label="Drucken" title="Drucken" disabled>${ICON_PRINT}</button>
       <button class="viewer-save-zoom hidden" type="button" aria-label="Zoom dieser Seite als Standard für alle speichern" title="Zoom dieser Seite als Standard für alle speichern">${ICON_SAVE}<span>Zoom</span></button>
       <button class="viewer-btn viewer-zoom-out" type="button" aria-label="Verkleinern">−</button>
