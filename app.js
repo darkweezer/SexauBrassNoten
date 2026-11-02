@@ -13,7 +13,7 @@ import { openViewer, renderPdfStrip } from "./viewer.js";
 import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
-const APP_VERSION = "32"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
+const APP_VERSION = "33"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
@@ -40,6 +40,7 @@ const state = {
   draft: null,        // Verwaltung: noch nicht gespeicherte Änderungen { stuecke: Set, instrumente: Set }
   adminMode: "stuecke",
   admins: [],         // in der Verwaltung eingetragene Administratoren [{ email, name }]
+  zoomStandard: {},   // von Admins gespeicherter Standard-Zoom: "<fileId>:<Seite>" -> { z, x, y, t }
   zuordnung: {},      // von der Verwaltung korrigierte Stimmen: "<songId>|<Stimme>" -> { inst, nr, st }
   zVersion: 0,
   assignOpen: new Set(),
@@ -265,11 +266,12 @@ function loadCachedStatus() {
     if (Array.isArray(data?.instrumenteInaktiv)) state.instInaktiv = new Set(data.instrumenteInaktiv);
     if (data?.zuordnung && typeof data.zuordnung === "object") setZuordnung(data.zuordnung);
     if (Array.isArray(data?.admins)) state.admins = data.admins;
+    if (data?.zoom && typeof data.zoom === "object") state.zoomStandard = data.zoom;
   } catch {}
 }
 
 function cacheStatus() {
-  lsSet(LS_STATUS, JSON.stringify({ inaktiv: [...state.inaktiv], instrumenteInaktiv: [...state.instInaktiv], zuordnung: state.zuordnung, admins: state.admins }));
+  lsSet(LS_STATUS, JSON.stringify({ inaktiv: [...state.inaktiv], instrumenteInaktiv: [...state.instInaktiv], zuordnung: state.zuordnung, admins: state.admins, zoom: state.zoomStandard }));
 }
 
 async function refreshStatus() {
@@ -281,6 +283,7 @@ async function refreshStatus() {
     state.instInaktiv = new Set(status.instrumenteInaktiv);
     setZuordnung(status.zuordnung ?? {});
     state.admins = status.admins ?? [];
+    state.zoomStandard = status.zoom ?? {};
     state.statusFileId = status.fileId;
     state.statusInfo = status.geaendert ? { geaendert: status.geaendert, von: status.von } : null;
     cacheStatus();
@@ -675,7 +678,8 @@ async function saveAdmin(button) {
     const zuordnung = sortKeys(draft.zuordnung);
     const admins = draft.admins.map((a) => ({ ...a }));
     state.statusFileId = await saveStatus({
-      ...CONFIG.STATUS_DATEI, fileId: state.statusFileId, inaktiv, instrumenteInaktiv, zuordnung, admins, von: state.email,
+      ...CONFIG.STATUS_DATEI, fileId: state.statusFileId, inaktiv, instrumenteInaktiv, zuordnung, admins,
+      zoom: state.zoomStandard, von: state.email,
     });
     state.admins = admins;
     state.inaktiv = new Set(inaktiv);
@@ -692,6 +696,32 @@ async function saveAdmin(button) {
     handleError(err);
   } finally {
     updateAdminAccess(); // zeichnet die Verwaltung neu (oder verlässt sie, wenn man sich selbst entfernt hat)
+  }
+}
+
+// Betrachter: Admin speichert den Zoom einer Seite als Standard für alle (null = Standard entfernen).
+// Liest die Status-Datei frisch ein, damit Änderungen anderer Admins nicht verloren gehen.
+async function saveZoomStandard(key, view) {
+  try {
+    if (!canWrite()) await signIn({ interactive: true, withWrite: true }); // muss als Erstes aus dem Klick heraus laufen
+    const status = await loadStatus(CONFIG.STATUS_DATEI);
+    const zoom = { ...status.zoom };
+    if (view) zoom[key] = view;
+    else delete zoom[key];
+    state.statusFileId = await saveStatus({
+      ...CONFIG.STATUS_DATEI, fileId: status.fileId, inaktiv: status.inaktiv, instrumenteInaktiv: status.instrumenteInaktiv,
+      zuordnung: status.zuordnung, admins: status.admins, zoom, von: state.email,
+    });
+    state.zoomStandard = zoom;
+    state.statusInfo = { geaendert: new Date().toISOString(), von: state.email };
+    cacheStatus();
+    toast(view
+      ? `Zoom ${Math.round(view.z * 100)} % für diese Seite gespeichert. Alle bekommen ihn beim Öffnen.`
+      : "Standard-Zoom entfernt. Die Seite öffnet für alle wieder ganz.", 3500);
+    return true;
+  } catch (err) {
+    handleError(err);
+    return false;
   }
 }
 
@@ -1146,6 +1176,10 @@ function openFile(fileId) {
       checkAdmin();
     },
     zoomKey: `notenapp.zoom.${(state.email || lsGet(LS_USER) || "gast").toLowerCase()}`,
+    // Standard-Zoom der Admins (Status-Datei in Drive); speichern dürfen nur Admins
+    zoomDefaults: () => state.zoomStandard,
+    canSaveZoom: () => state.isAdmin,
+    onSaveZoom: saveZoomStandard,
   }).catch(handleError);
 }
 

@@ -4,6 +4,9 @@
 // Blättern: wischen, links/rechts auf den Rand tippen, Pfeiltasten oder Bluetooth-Fußpedal (Bild-ab/Leertaste).
 // Zoomen: mit zwei Fingern aufziehen, Doppeltipp, die Knöpfe − / + oder Strg + Mausrad.
 // Zoom und Ausschnitt werden je Seite und Nutzer auf dem Gerät gespeichert und beim nächsten Öffnen wiederhergestellt.
+// Admins können mit „Zoom speichern“ den aktuellen Zoom einer Seite als Standard für alle festlegen (Status-Datei in Drive).
+// Was neuer ist, gilt: ein später gespeicherter Standard ersetzt den eigenen Zoom, eigenes Zoomen danach ersetzt den Standard.
+// „Drucken“ druckt alle Seiten der geöffneten Stimme (ganze Seiten, ohne Zoom).
 // Die PDF-Bibliothek (pdf.js von Mozilla) liegt im Ordner vendor/pdfjs und funktioniert damit auch offline.
 
 let pdfjsPromise = null;
@@ -32,6 +35,13 @@ function saveZoomStore(key, store) {
   try { localStorage.setItem(key, JSON.stringify(store)); } catch {}
 }
 const pageKey = (p) => `${p.fileId}:${p.num}`;
+const roundView = (z, fx, fy) => ({ z: Math.round(z * 100) / 100, x: Math.round(fx * 1000) / 1000, y: Math.round(fy * 1000) / 1000 });
+// gleiche Ansicht? (kleine Abweichungen durch andere Bildschirmgrößen zählen nicht)
+const sameView = (a, b) => Math.abs((a?.z ?? 1) - (b?.z ?? 1)) < 0.02
+  && ((a?.z ?? 1) <= 1.01 || (Math.abs((a?.x ?? 0.5) - (b?.x ?? 0.5)) < 0.02 && Math.abs((a?.y ?? 0) - (b?.y ?? 0)) < 0.02));
+
+const ICON_PRINT = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>`;
+const ICON_SAVE = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8V3"/><rect x="7" y="13" width="10" height="8" rx="1"/></svg>`;
 
 /**
  * @param {object} opts
@@ -41,12 +51,16 @@ const pageKey = (p) => `${p.fileId}:${p.num}`;
  * @param {(id:string)=>Promise<Blob>} opts.loadBlob  lädt eine Datei (offline oder aus Drive)
  * @param {string} opts.zoomKey     localStorage-Schlüssel für die Zoom-Einstellungen dieses Nutzers
  * @param {()=>Promise<void>} [opts.reauth]  neu bei Google anmelden (muss aus einem Klick heraus laufen)
+ * @param {()=>object} [opts.zoomDefaults]  Standard-Zoom aller Seiten: "<fileId>:<Seite>" -> { z, x, y, t }
+ * @param {()=>boolean} [opts.canSaveZoom]  darf diese Person den Standard-Zoom speichern (Admin)?
+ * @param {(key:string, view:object|null)=>Promise<boolean>} [opts.onSaveZoom]  Standard speichern (null = Standard entfernen)
  */
-export async function openViewer({ title, files, start = 0, loadBlob, zoomKey = "notenapp.zoom", reauth }) {
+export async function openViewer({ title, files, start = 0, loadBlob, zoomKey = "notenapp.zoom", reauth,
+  zoomDefaults = () => ({}), canSaveZoom = () => false, onSaveZoom }) {
   closeViewer();
   const root = buildDom(title);
   const v = {
-    root, files, loadBlob, zoomKey, reauth, start,
+    root, files, loadBlob, zoomKey, reauth, start, zoomDefaults, canSaveZoom, onSaveZoom, title,
     zoomStore: loadZoomStore(zoomKey),
     pages: [],        // { fileIdx, fileId, doc, num, label }
     docs: new Map(),  // fileIdx -> PDFDocument
@@ -67,6 +81,7 @@ async function loadAll(v) {
   setStatus(v, "Lade Noten …");
   $(".viewer-fallback", root).classList.add("hidden");
   $(".viewer-login", root).classList.add("hidden");
+  v.loading = true;
   try {
     const lib = await loadPdfJs();
     // Startdatei zuerst, damit sofort etwas zu sehen ist; die anderen danach
@@ -100,6 +115,8 @@ async function loadAll(v) {
       setStatus(v, err?.message ? `Die Noten konnten nicht angezeigt werden: ${err.message}` : "Die Noten konnten nicht angezeigt werden.");
       if (v.blobs.size) $(".viewer-fallback", root).classList.remove("hidden");
     }
+  } finally {
+    v.loading = false;
   }
 }
 
@@ -113,6 +130,7 @@ export function closeViewer(fromHistory = false) {
   window.removeEventListener("keydown", v.onKey);
   window.removeEventListener("resize", v.onResize);
   window.removeEventListener("popstate", v.onPop);
+  removePrintSheet();
   v.root.remove();
   document.body.classList.remove("viewer-open");
   if (!fromHistory && history.state?.viewer) history.back();
@@ -137,6 +155,8 @@ function buildDom(title) {
       <div class="viewer-title"><strong></strong><span class="viewer-page"></span></div>
       <button class="viewer-reset is-off" type="button" aria-label="Zoom zurücksetzen">↺ Zoom</button>
       <div class="viewer-tools">
+      <button class="viewer-btn viewer-print" type="button" aria-label="Drucken" title="Drucken" disabled>${ICON_PRINT}</button>
+      <button class="viewer-save-zoom hidden" type="button" aria-label="Zoom dieser Seite als Standard für alle speichern" title="Zoom dieser Seite als Standard für alle speichern">${ICON_SAVE}<span>Zoom</span></button>
       <button class="viewer-btn viewer-zoom-out" type="button" aria-label="Verkleinern">−</button>
       <button class="viewer-btn viewer-zoom-in" type="button" aria-label="Vergrößern">+</button>
       <button class="viewer-btn viewer-close" type="button" aria-label="Schließen">✕</button>
@@ -174,14 +194,24 @@ function updateBar(v) {
   $(".viewer-zoom-out", v.root).disabled = v.zoom <= MIN_ZOOM + 0.01;
   $(".viewer-zoom-in", v.root).disabled = v.zoom >= MAX_ZOOM - 0.01;
   $(".viewer-reset", v.root).classList.toggle("is-off", v.zoom <= 1.01);
+  $(".viewer-print", v.root).disabled = !total || v.printing;
+  $(".viewer-save-zoom", v.root).classList.toggle("hidden", !v.canSaveZoom() || !p);
   v.root.classList.toggle("is-zoomed", v.zoom > 1.01);
+}
+
+// Ansicht, die beim Öffnen einer Seite gilt: eigener Zoom oder Standard-Zoom – was neuer ist
+function effectiveView(v, key) {
+  const own = v.zoomStore[key];
+  const def = v.zoomDefaults()?.[key];
+  if (def && (!own || (def.t ?? 0) > (own.t ?? 0))) return def;
+  return own ?? null;
 }
 
 // Seite wechseln: gespeicherten Zoom und Ausschnitt dieser Seite holen
 async function showPage(v) {
   const p = v.pages[v.index];
   if (!p) return;
-  const saved = v.zoomStore[pageKey(p)];
+  const saved = effectiveView(v, pageKey(p));
   v.zoom = clamp(saved?.z ?? 1);
   await render(v, { fx: saved?.x ?? 0.5, fy: saved?.y ?? 0 });
 }
@@ -197,13 +227,113 @@ function saveView(v) {
   const p = v.pages[v.index];
   if (!p) return;
   const key = pageKey(p);
-  if (v.zoom <= 1.01) {
-    delete v.zoomStore[key];
+  const view = currentView(v);
+  const def = v.zoomDefaults()?.[key];
+  const shown = effectiveView(v, key);
+  if (shown && sameView(view, shown)) return; // nichts verändert
+  if (def ? sameView(view, def) : view.z <= 1.01) {
+    delete v.zoomStore[key]; // entspricht dem Standard
   } else {
-    const { fx, fy } = scrollFraction($(".viewer-stage", v.root));
-    v.zoomStore[key] = { z: Math.round(v.zoom * 100) / 100, x: Math.round(fx * 1000) / 1000, y: Math.round(fy * 1000) / 1000 };
+    v.zoomStore[key] = { ...view, t: Date.now() }; // eigene Einstellung (auch „ganze Seite“ statt Standard-Zoom)
   }
   saveZoomStore(v.zoomKey, v.zoomStore);
+}
+
+function currentView(v) {
+  if (v.zoom <= 1.01) return { z: 1 };
+  const { fx, fy } = scrollFraction($(".viewer-stage", v.root));
+  return roundView(v.zoom, fx, fy);
+}
+
+// Admin: aktuellen Zoom dieser Seite als Standard für alle speichern
+async function saveDefaultZoom(v, button) {
+  const p = v.pages[v.index];
+  if (!p || !v.onSaveZoom) return;
+  const key = pageKey(p);
+  const view = currentView(v);
+  button.disabled = true;
+  try {
+    const ok = await v.onSaveZoom(key, view.z <= 1.01 ? null : { ...view, t: Date.now() });
+    if (ok && current === v) {
+      delete v.zoomStore[key]; // eigener Zoom ist jetzt der Standard
+      saveZoomStore(v.zoomKey, v.zoomStore);
+    }
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// ---------- Drucken ----------
+// Alle Seiten der geöffneten Stimme als Bilder in einen eigenen Druckbereich zeichnen und den Druckdialog öffnen.
+// Klappt so auch auf iPad und Android, wo man eine PDF in der Seite nicht direkt drucken kann.
+
+function removePrintSheet() {
+  document.querySelector(".sheet-print")?.remove();
+  document.body.classList.remove("printing-sheet");
+}
+
+async function printSheets(v) {
+  if (!v.pages.length || v.printing) return;
+  v.printing = true;
+  updateBar(v);
+  const btn = $(".viewer-print", v.root);
+  btn.classList.add("is-busy");
+  try {
+    // auf alle Dateien der Stimme warten (werden im Hintergrund geladen)
+    while (v.loading && v.docs.size < v.files.length && current === v) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (current !== v) return;
+    removePrintSheet();
+    const sheet = document.createElement("div");
+    sheet.className = "sheet-print";
+    for (const p of v.pages) {
+      const page = await p.doc.getPage(p.num);
+      const base = page.getViewport({ scale: 1 });
+      // etwa 200 dpi: scharf genug für Noten, aber nicht zu groß für Tablets
+      const scale = Math.min(200 / 72, Math.sqrt(12e6 / (base.width * base.height)));
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      if (current !== v) return;
+      const img = new Image();
+      img.alt = `${v.title} – ${p.label} – Seite ${p.num}`;
+      img.className = base.width > base.height ? "is-landscape" : "";
+      const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.9));
+      img.src = blob ? URL.createObjectURL(blob) : canvas.toDataURL("image/jpeg", 0.9);
+      canvas.width = canvas.height = 0;
+      await img.decode().catch(() => {});
+      const wrap = document.createElement("div");
+      wrap.className = "sheet-print-page";
+      wrap.append(img);
+      sheet.append(wrap);
+    }
+    document.body.append(sheet);
+    document.body.classList.add("printing-sheet");
+    const cleanup = () => {
+      window.removeEventListener("afterprint", cleanup);
+      setTimeout(() => {
+        for (const img of sheet.querySelectorAll("img")) if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+        sheet.remove();
+        if (!document.querySelector(".sheet-print")) document.body.classList.remove("printing-sheet");
+      }, 500);
+    };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+  } catch (err) {
+    console.error(err);
+    setStatus(v, "Drucken hat nicht geklappt. Tipp: Datei über „Im Browser öffnen“ drucken.");
+    setTimeout(() => current === v && setStatus(v, ""), 4000);
+  } finally {
+    v.printing = false;
+    btn.classList.remove("is-busy");
+    if (current === v) updateBar(v);
+  }
 }
 
 /**
@@ -321,6 +451,8 @@ function bindControls(v) {
   $(".viewer-zoom-in", root).addEventListener("click", () => setZoom(v, v.zoom * 1.25));
   $(".viewer-zoom-out", root).addEventListener("click", () => setZoom(v, v.zoom / 1.25));
   $(".viewer-reset", root).addEventListener("click", () => setZoom(v, 1));
+  $(".viewer-print", root).addEventListener("click", () => printSheets(v));
+  $(".viewer-save-zoom", root).addEventListener("click", (e) => saveDefaultZoom(v, e.currentTarget));
   $(".viewer-login", root).addEventListener("click", async () => {
     try {
       await v.reauth();
