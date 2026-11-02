@@ -38,6 +38,21 @@
       <div id="login-box" class="login-box hidden">
         <p>Bitte melden Sie sich mit Ihrem Google-Konto an, um die Noten aus Google Drive zu sehen.</p>
         <button id="login-btn" class="btn big" type="button">Mit Google anmelden</button>
+        <details id="access-box" class="access-box">
+          <summary>Noch keinen Zugang? Zugang anfragen</summary>
+          <p id="access-blocked" class="hint hidden">Die Anmeldung hat nicht geklappt? Dann bist du wahrscheinlich noch nicht freigeschaltet. Schick einfach eine Anfrage.</p>
+          <form id="access-form" class="access-form">
+            <label class="field"><span>Dein Name</span>
+              <input id="access-name" type="text" autocomplete="name" required /></label>
+            <label class="field"><span>Deine Google-Adresse (Gmail)</span>
+              <input id="access-email" type="email" autocomplete="email" placeholder="name@gmail.com" required /></label>
+            <label class="field"><span>Instrument</span>
+              <select id="access-inst"><option value="">bitte wählen</option></select></label>
+            <button class="btn" type="submit">Anfrage per E-Mail senden</button>
+            <p class="hint">Es öffnet sich dein E-Mail-Programm mit einer fertigen Nachricht. Du musst nur noch auf „Senden“ tippen. Sobald du freigeschaltet bist, bekommst du Bescheid und kannst dich oben anmelden.</p>
+            <p class="hint">Klappt das nicht? Schreib deine Gmail-Adresse an <a id="access-mail-link" href="#"></a>.</p>
+          </form>
+        </details>
       </div>
       <div class="toolbar three">
         <label class="field search">

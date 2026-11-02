@@ -20,6 +20,9 @@ export const CONFIG = {
     "darkweezer@gmail.com",
   ],
 
+  // An diese Adresse schickt der Knopf „Zugang anfragen“ die Anfrage neuer Musiker (per E-Mail-Programm).
+  ZUGANG_EMAIL: "darkweezer@gmail.com",
+
   // Hier merkt sich die App, welche Stücke gerade nicht gespielt werden (Datei wird automatisch angelegt).
   STATUS_DATEI: { folderId: "1x8tVwolO0y1TMN0oCD0Fid6dVHDAsOIk", fileName: "notenarchiv-aktive-stuecke.json" },
 };

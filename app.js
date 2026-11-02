@@ -13,7 +13,7 @@ import { openViewer, renderPdfStrip } from "./viewer.js";
 import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
-const APP_VERSION = "33"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
+const APP_VERSION = "34"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
@@ -741,7 +741,43 @@ async function handleLoginClick() {
     toast("Angemeldet");
   } catch (err) {
     toast(err.message, 4000);
+    // Nicht freigeschaltete Nutzer stoppt Google schon im Anmeldefenster: Anfrage gleich anbieten
+    $("#access-blocked").classList.remove("hidden");
+    $("#access-box").open = true;
   }
+}
+
+// ---------- Zugang anfragen (ohne Anmeldung, per E-Mail an den Notenwart) ----------
+
+function initAccessRequest() {
+  const to = CONFIG.ZUGANG_EMAIL;
+  const box = $("#access-box");
+  if (!to) { box.classList.add("hidden"); return; }
+  const link = $("#access-mail-link");
+  link.href = `mailto:${to}`;
+  link.textContent = to;
+  const sel = $("#access-inst");
+  for (const name of INSTRUMENT_ORDER) sel.add(new Option(name, name));
+  $("#access-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("#access-name").value.trim();
+    // Google nimmt Testnutzer nur als @gmail.com an
+    const email = normEmail($("#access-email").value);
+    const inst = sel.value;
+    const subject = `NotenApp: Zugang für ${name}`;
+    const body = [
+      "Hallo,",
+      "",
+      "ich möchte bitte Zugang zur NotenApp.",
+      "",
+      `Name: ${name}`,
+      `Google-Adresse: ${email}`,
+      inst ? `Instrument: ${inst}` : null,
+      "",
+      "Danke!",
+    ].filter((l) => l !== null).join("\n");
+    location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  });
 }
 
 function handleError(err) {
@@ -1316,6 +1352,7 @@ function bindEvents() {
     if (c && e.target === c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); expand(c); }
   });
   $("#login-btn").addEventListener("click", handleLoginClick);
+  initAccessRequest();
   $("#logout-btn").addEventListener("click", () => {
     signOut();
     state.isAdmin = false;
