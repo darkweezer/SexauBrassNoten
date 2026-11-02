@@ -13,7 +13,7 @@ import { openViewer, renderPdfStrip } from "./viewer.js";
 import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
-const APP_VERSION = "30"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
+const APP_VERSION = "31"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
