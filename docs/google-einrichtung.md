@@ -47,7 +47,17 @@ Mit `drive.readonly` kann die App Noten **nur ansehen und herunterladen**, aber 
 Wichtig: Dieselben Personen müssen **beide Drive-Ordner „Noten“** sehen dürfen
 (in Google Drive: Ordner → Teilen → als „Betrachter“ hinzufügen).
 
-Neue Person freischalten = hier als Testnutzer eintragen **und** beide Ordner mit ihr teilen.
+Neue Person freischalten = hier als Testnutzer eintragen **und** beide Ordner mit ihr teilen
+(solange die Ordner „Jeder mit dem Link“ freigegeben sind, entfällt das Teilen).
+
+### Zugangsanfragen aus der App
+
+Wer noch nicht freigeschaltet ist, tippt in der App unter „Mit Google anmelden“ auf
+**„Noch keinen Zugang? Zugang anfragen“**, gibt Name, Gmail-Adresse und Instrument ein und schickt
+die fertige Mail ab. Sie geht an die Adresse `ZUGANG_EMAIL` in `config.js`.
+Die Adresse steht in der Mail schon in der `@gmail.com`-Form: einfach kopieren, hier unter
+**Testnutzer → Nutzer hinzufügen** einfügen, speichern und der Person kurz Bescheid geben.
+Ein automatisches Eintragen gibt es bei Google dafür nicht.
 Person entfernen = an beiden Stellen wieder austragen.
 
 ## 6. Client-ID erstellen

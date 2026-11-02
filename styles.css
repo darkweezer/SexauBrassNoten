@@ -1,5 +1,5 @@
 :root {
-  --css-version: "33";
+  --css-version: "34";
   color-scheme: dark;
   --bg: #0e0e10;
   --surface: #1a1a1d;
@@ -148,6 +148,17 @@ input[type="search"]:focus, select:focus, .admins-form input:focus, button:focus
   padding: 16px; margin-bottom: 16px; display: grid; gap: 10px;
 }
 .login-box p { margin: 0; }
+.access-box summary { cursor: pointer; color: var(--accent); font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+.access-form { display: grid; gap: 10px; margin-top: 8px; }
+.access-form .hint { margin: 0; }
+.access-form a { color: var(--accent); }
+.access-box > .hint { margin: 4px 0 0; }
+input[type="text"], input[type="email"] {
+  width: 100%; height: var(--tap); min-height: var(--tap);
+  padding: 10px 14px; font: inherit; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+input[type="text"]:focus, input[type="email"]:focus { outline: 3px solid var(--accent); outline-offset: 2px; }
 .btn.big { min-height: 56px; font-size: 1.1rem; }
 
 /* Stückliste */
