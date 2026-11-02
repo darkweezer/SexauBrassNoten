@@ -87,10 +87,11 @@
         <button type="button" class="is-active" data-admin-mode="stuecke">Stücke</button>
         <button type="button" data-admin-mode="instrumente">Instrumente</button>
         <button type="button" data-admin-mode="zuordnen">Zuordnen</button>
+        <button type="button" data-admin-mode="admins">Admins</button>
       </div>
       <h2 id="admin-title">Stücke verwalten</h2>
       <p id="admin-intro" class="hint"></p>
-      <div class="toolbar">
+      <div id="admin-toolbar" class="toolbar">
         <label class="field search">
           <span>Suche</span>
           <input id="admin-search" type="search" placeholder="Titel oder Nummer suchen" autocomplete="off" />
@@ -113,6 +114,23 @@
         </span>
       </div>
       <div id="assign-list" class="assign-list hidden"></div>
+      <div id="admins-panel" class="hidden">
+        <form id="admins-form" class="admins-form" autocomplete="off">
+          <label class="field">
+            <span>E-Mail-Adresse (Google-Konto)</span>
+            <input id="admins-email" type="email" placeholder="name@gmail.com" required />
+          </label>
+          <label class="field">
+            <span>Name (optional)</span>
+            <input id="admins-name" type="text" placeholder="z. B. Frank" />
+          </label>
+          <button class="btn secondary" type="submit">Hinzufügen</button>
+        </form>
+        <table class="admin-table">
+          <thead><tr><th>Administrator</th><th class="switch-cell"></th></tr></thead>
+          <tbody id="admins-list"></tbody>
+        </table>
+      </div>
       <table id="admin-table" class="admin-table">
         <thead><tr><th class="num" id="admin-col-num">Nr.</th><th id="admin-col-label">Stück</th><th class="switch-cell">Aktiv</th></tr></thead>
         <tbody id="admin-list"></tbody>

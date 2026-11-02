@@ -13,7 +13,7 @@ import { openViewer, renderPdfStrip } from "./viewer.js";
 import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
-const APP_VERSION = "31"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
+const APP_VERSION = "32"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
@@ -39,6 +39,7 @@ const state = {
   instInaktiv: new Set(), // Instrumente, die gerade nicht besetzt sind
   draft: null,        // Verwaltung: noch nicht gespeicherte Änderungen { stuecke: Set, instrumente: Set }
   adminMode: "stuecke",
+  admins: [],         // in der Verwaltung eingetragene Administratoren [{ email, name }]
   zuordnung: {},      // von der Verwaltung korrigierte Stimmen: "<songId>|<Stimme>" -> { inst, nr, st }
   zVersion: 0,
   assignOpen: new Set(),
@@ -263,11 +264,12 @@ function loadCachedStatus() {
     if (Array.isArray(data?.inaktiv)) state.inaktiv = new Set(data.inaktiv);
     if (Array.isArray(data?.instrumenteInaktiv)) state.instInaktiv = new Set(data.instrumenteInaktiv);
     if (data?.zuordnung && typeof data.zuordnung === "object") setZuordnung(data.zuordnung);
+    if (Array.isArray(data?.admins)) state.admins = data.admins;
   } catch {}
 }
 
 function cacheStatus() {
-  lsSet(LS_STATUS, JSON.stringify({ inaktiv: [...state.inaktiv], instrumenteInaktiv: [...state.instInaktiv], zuordnung: state.zuordnung }));
+  lsSet(LS_STATUS, JSON.stringify({ inaktiv: [...state.inaktiv], instrumenteInaktiv: [...state.instInaktiv], zuordnung: state.zuordnung, admins: state.admins }));
 }
 
 async function refreshStatus() {
@@ -278,9 +280,11 @@ async function refreshStatus() {
     state.inaktiv = new Set(status.inaktiv);
     state.instInaktiv = new Set(status.instrumenteInaktiv);
     setZuordnung(status.zuordnung ?? {});
+    state.admins = status.admins ?? [];
     state.statusFileId = status.fileId;
     state.statusInfo = status.geaendert ? { geaendert: status.geaendert, von: status.von } : null;
     cacheStatus();
+    updateAdminAccess();
   } catch (err) {
     if (err instanceof NotLoggedInError) throw err;
     // ohne Status-Datei ist einfach alles aktiv
@@ -295,10 +299,21 @@ async function checkAdmin() {
     state.email = await getUserEmail();
     if (state.email) lsSet(LS_USER, state.email); // für Zoom-Einstellungen auch ohne Internet
   } catch { state.email = ""; }
-  const admins = (CONFIG.VERWALTUNG ?? []).map((a) => a.toLowerCase().replace("@googlemail.com", "@gmail.com"));
-  state.isAdmin = admins.includes(state.email.replace("@googlemail.com", "@gmail.com"));
+  updateAdminAccess();
+}
+
+// @googlemail.com und @gmail.com sind dasselbe Konto
+const normEmail = (e) => String(e ?? "").trim().toLowerCase().replace(/@googlemail\.com$/, "@gmail.com");
+const fixedAdmins = () => new Set((CONFIG.VERWALTUNG ?? []).map(normEmail));
+
+// Admin = fest in config.js eingetragen oder in der Verwaltung unter „Admins“
+function updateAdminAccess() {
+  const me = normEmail(state.email);
+  const wasAdmin = state.isAdmin;
+  state.isAdmin = Boolean(me) && (fixedAdmins().has(me) || state.admins.some((a) => normEmail(a.email) === me));
   $("#tab-admin").classList.toggle("hidden", !state.isAdmin);
   if (state.isAdmin) renderAdmin();
+  else if (wasAdmin && $("#view-admin").classList.contains("is-active")) showView("search");
 }
 
 // ---------- Verwaltung ----------
@@ -322,6 +337,7 @@ function ensureDraft() {
     state.draft = {
       stuecke: new Set(state.inaktiv), instrumente: new Set(state.instInaktiv),
       zuordnung: JSON.parse(JSON.stringify(state.zuordnung)),
+      admins: state.admins.map((a) => ({ ...a })),
     };
   }
   return state.draft;
@@ -330,7 +346,8 @@ function ensureDraft() {
 function draftChanged() {
   const d = state.draft;
   return Boolean(d) && (!sameSet(d.stuecke, state.inaktiv) || !sameSet(d.instrumente, state.instInaktiv)
-    || JSON.stringify(sortKeys(d.zuordnung)) !== JSON.stringify(sortKeys(state.zuordnung)));
+    || JSON.stringify(sortKeys(d.zuordnung)) !== JSON.stringify(sortKeys(state.zuordnung))
+    || JSON.stringify(d.admins) !== JSON.stringify(state.admins));
 }
 
 function adminItems() {
@@ -345,9 +362,19 @@ function adminItems() {
 function renderAdmin() {
   const draft = ensureDraft();
   const isAssign = state.adminMode === "zuordnen";
+  const isAdmins = state.adminMode === "admins";
   $("#assign-list").classList.toggle("hidden", !isAssign);
-  $("#admin-table").classList.toggle("hidden", isAssign);
-  $("#admin-bar").classList.toggle("hidden", isAssign);
+  $("#admins-panel").classList.toggle("hidden", !isAdmins);
+  $("#admin-toolbar").classList.toggle("hidden", isAdmins);
+  $("#admin-table").classList.toggle("hidden", isAssign || isAdmins);
+  $("#admin-bar").classList.toggle("hidden", isAssign || isAdmins);
+  if (isAdmins) {
+    document.querySelectorAll("[data-admin-mode]").forEach((b) =>
+      b.classList.toggle("is-active", b.dataset.adminMode === state.adminMode));
+    renderAdmins();
+    renderSaveState();
+    return;
+  }
   if (isAssign) {
     document.querySelectorAll("[data-admin-mode]").forEach((b) =>
       b.classList.toggle("is-active", b.dataset.adminMode === state.adminMode));
@@ -407,6 +434,47 @@ function renderSaveState() {
   $("#admin-info").textContent = info
     ? `Zuletzt gespeichert am ${new Date(info.geaendert).toLocaleString("de-DE")} von ${info.von}`
     : "Noch nichts gespeichert: Alles gilt als aktiv.";
+}
+
+// ---------- Verwaltung: Administratoren ----------
+// Feste Admins stehen in config.js, weitere werden hier eingetragen und in der Status-Datei gespeichert.
+
+function renderAdmins() {
+  const draft = ensureDraft();
+  $("#admin-title").textContent = "Administratoren";
+  $("#admin-intro").textContent = "Administratoren sehen den Reiter „Verwaltung“. Eintragen mit der Adresse ihres Google-Kontos "
+    + "(@googlemail.com und @gmail.com sind gleich). Speichern können sie Änderungen nur, wenn sie in Drive Bearbeiter des ersten Noten-Ordners sind.";
+  const fixed = [...fixedAdmins()].map((email) => ({ email, name: "", fixed: true }));
+  const rows = [...fixed, ...draft.admins.filter((a) => !fixedAdmins().has(normEmail(a.email)))];
+  const me = normEmail(state.email);
+  $("#admins-list").innerHTML = rows.map((a) => `
+    <tr>
+      <td>${escapeHtml(a.name || a.email)}${normEmail(a.email) === me ? " (du)" : ""}
+        <span class="admin-meta">${a.name ? escapeHtml(a.email) + (a.fixed ? " · " : "") : ""}${a.fixed ? "fest eingetragen" : ""}</span></td>
+      <td class="switch-cell">${a.fixed ? "" : `<button class="btn secondary small admins-remove" type="button" data-remove-admin="${escapeHtml(a.email)}">Entfernen</button>`}</td>
+    </tr>`).join("");
+}
+
+function addAdmin(e) {
+  e.preventDefault();
+  const email = normEmail($("#admins-email").value);
+  const name = $("#admins-name").value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast("Bitte eine gültige E-Mail-Adresse eingeben."); return; }
+  const draft = ensureDraft();
+  if (fixedAdmins().has(email) || draft.admins.some((a) => normEmail(a.email) === email)) {
+    toast("Diese Adresse ist schon eingetragen.");
+    return;
+  }
+  draft.admins.push(name ? { email, name } : { email });
+  $("#admins-email").value = "";
+  $("#admins-name").value = "";
+  renderAdmin();
+}
+
+function removeAdmin(email) {
+  const draft = ensureDraft();
+  draft.admins = draft.admins.filter((a) => normEmail(a.email) !== normEmail(email));
+  renderAdmin();
 }
 
 // ---------- Verwaltung: Stimmen zuordnen ----------
@@ -605,9 +673,11 @@ async function saveAdmin(button) {
     const inaktiv = [...draft.stuecke];
     const instrumenteInaktiv = [...draft.instrumente];
     const zuordnung = sortKeys(draft.zuordnung);
+    const admins = draft.admins.map((a) => ({ ...a }));
     state.statusFileId = await saveStatus({
-      ...CONFIG.STATUS_DATEI, fileId: state.statusFileId, inaktiv, instrumenteInaktiv, zuordnung, von: state.email,
+      ...CONFIG.STATUS_DATEI, fileId: state.statusFileId, inaktiv, instrumenteInaktiv, zuordnung, admins, von: state.email,
     });
+    state.admins = admins;
     state.inaktiv = new Set(inaktiv);
     state.instInaktiv = new Set(instrumenteInaktiv);
     setZuordnung(JSON.parse(JSON.stringify(zuordnung)));
@@ -621,7 +691,7 @@ async function saveAdmin(button) {
   } catch (err) {
     handleError(err);
   } finally {
-    renderAdmin();
+    updateAdminAccess(); // zeichnet die Verwaltung neu (oder verlässt sie, wenn man sich selbst entfernt hat)
   }
 }
 
@@ -1134,6 +1204,11 @@ function bindEvents() {
     sel.value = state.adminMode === "zuordnen" ? "unklar" : "alle";
     renderAdmin();
   }));
+  $("#admins-form").addEventListener("submit", addAdmin);
+  $("#admins-list").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-remove-admin]");
+    if (btn) removeAdmin(btn.dataset.removeAdmin);
+  });
   $("#assign-list").addEventListener("change", (e) => {
     const row = e.target.closest(".assign-row");
     if (row && e.target.matches("select")) updateAssignment(row);
