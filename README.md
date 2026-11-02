@@ -55,7 +55,7 @@ notenapp/
 - [x] Google-Cloud-Projekt „SBNotenarchiv“ angelegt, Client-ID in `config.js` eingetragen
 - [x] Instrumentnamen vereinheitlicht (255 Schreibweisen → 30 Instrumente, Liste in `instruments.js`)
 - [x] Logo und dunkles Design (Schwarz/Gold)
-- [x] Verwaltung: Stücke und Instrumente aktiv/nicht aktiv schalten (nur für Adressen in `config.js` → `VERWALTUNG`)
+- [x] Verwaltung: Stücke und Instrumente aktiv/nicht aktiv schalten (nur für Administratoren aus `config.js` oder Verwaltung → Admins)
 - [ ] Datenbank nur, falls später wirklich nötig
 - [ ] Anleitung „So installieren Sie die App“ mit Bildern
 - [ ] Hosting über GitHub Pages: https://darkweezer.github.io/SexauBrassNoten/ (Repository muss dafür öffentlich sein)
@@ -91,8 +91,9 @@ In der App erscheint das Stück nach dem nächsten Öffnen oder über Hilfe → 
 
 ## Verwaltung (aktive Stücke und Instrumente)
 
-Wer in `config.js` unter `VERWALTUNG` steht, sieht nach dem Anmelden den Bereich **Verwaltung**.
-Oben schaltet man zwischen zwei Seiten um:
+Wer Administrator ist, sieht nach dem Anmelden den Bereich **Verwaltung**. Administrator ist, wer in `config.js`
+unter `VERWALTUNG` steht (fest, kann in der App nicht entfernt werden) oder in der App unter **Admins** eingetragen ist.
+Oben schaltet man zwischen den Seiten um:
 
 - **Stücke**: Index aller Stücke (Nummer, Titel) mit Schalter „aktiv“. Nicht aktive Stücke sind für alle
   ausgeblendet (lassen sich aber mit einem Haken wieder einblenden).
@@ -101,10 +102,12 @@ Oben schaltet man zwischen zwei Seiten um:
 
 - **Zuordnen**: für Dateien, deren Name das Instrument nicht verrät (flexible Besetzungen „1. Stimme in B“, Scans „CCF…“),
   Instrument(e), Stimme und Stimmung festlegen. Das überschreibt die automatische Erkennung für alle Seiten dieser Stimme.
+- **Admins**: weitere Administratoren mit E-Mail-Adresse (Google-Konto) und optionalem Namen eintragen oder entfernen.
+  `@googlemail.com` und `@gmail.com` gelten als gleich.
 
 Gespeichert wird alles zusammen in der Datei `notenarchiv-aktive-stuecke.json` im ersten Noten-Ordner in Drive.
 Sie enthält nur, was nicht aktiv ist, neue Stücke und Instrumente sind also automatisch aktiv.
-Speichern kann nur, wer Schreibrechte in diesem Ordner hat; die Liste in `config.js` blendet nur die Seite ein.
+Speichern kann nur, wer Schreibrechte in diesem Ordner hat; die Admin-Liste blendet nur die Seite ein.
 
 ## Instrumente
 

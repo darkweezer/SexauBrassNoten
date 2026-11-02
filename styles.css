@@ -1,5 +1,5 @@
 :root {
-  --css-version: "31";
+  --css-version: "32";
   color-scheme: dark;
   --bg: #0e0e10;
   --surface: #1a1a1d;
@@ -75,12 +75,12 @@ main { max-width: 760px; margin: 0 auto; padding: 16px; }
 .toolbar.three input[type="search"], .toolbar.three select { padding: 10px 8px; text-overflow: ellipsis; }
 @media (max-width: 559px) { .toolbar.three .field { font-size: 0.85rem; } .toolbar.three input, .toolbar.three select { font-size: 0.95rem; } }
 
-input[type="search"], select {
+input[type="search"], select, .admins-form input {
   width: 100%; height: var(--tap); min-height: var(--tap);
   padding: 10px 14px; font: inherit; color: var(--text);
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
 }
-input[type="search"]:focus, select:focus, button:focus-visible, summary:focus-visible {
+input[type="search"]:focus, select:focus, .admins-form input:focus, button:focus-visible, summary:focus-visible {
   outline: 3px solid var(--accent); outline-offset: 2px;
 }
 
@@ -395,3 +395,9 @@ body.viewer-open { overflow: hidden; }
 #save-all-btn.is-progress { opacity: 1 !important; cursor: progress; background: var(--surface-2); border-color: var(--accent); color: #fff; }
 #save-all-btn.is-progress .save-all-text { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.6); }
 #save-all-btn:not(.is-progress) .save-all-bar { display: none; }
+
+/* Verwaltung: Administratoren */
+.admins-form { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; margin: 8px 0 12px; }
+@media (max-width: 559px) { .admins-form { grid-template-columns: 1fr; } .admins-form .btn { justify-self: start; } }
+.admins-remove { min-height: 36px; padding: 4px 10px; font-size: 0.85rem; }
+@media (max-width: 420px) { #view-admin .segmented button { padding-left: 4px; padding-right: 4px; font-size: 0.9rem; } }

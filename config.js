@@ -12,7 +12,9 @@ export const CONFIG = {
     { id: "1RRCxuh4ViIX06kJ63JLJKSNgS7sLm2eq", name: "Noten 2" },
   ],
 
-  // Wer die Seite „Verwaltung“ sieht (Google-Adressen, klein geschrieben, @gmail.com statt @googlemail.com).
+  // Feste Administratoren: sehen die Seite „Verwaltung“ immer und können dort nicht entfernt werden.
+  // Weitere Administratoren trägt man in der App unter Verwaltung → Admins ein (gespeichert in der Status-Datei).
+  // @googlemail.com und @gmail.com gelten als gleich.
   // Speichern klappt nur, wer auch Schreibrechte im ersten Noten-Ordner hat.
   VERWALTUNG: [
     "darkweezer@gmail.com",
