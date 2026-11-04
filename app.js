@@ -13,7 +13,7 @@ import { openViewer, renderPdfStrip } from "./viewer.js";
 import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
-const APP_VERSION = "35"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
+const APP_VERSION = "36"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
@@ -1416,11 +1416,32 @@ function initFullscreen() {
   document.addEventListener("webkitfullscreenchange", update);
 }
 
+// ---------- Uhrzeit oben in der Leiste ----------
+// Stunden:Minuten, wird immer genau zum Minutenwechsel aktualisiert.
+
+function initClock() {
+  const el = $("#clock");
+  if (!el) return;
+  const fmt = new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" });
+  const tick = () => {
+    const now = new Date();
+    el.textContent = fmt.format(now);
+    el.dateTime = now.toISOString();
+    setTimeout(tick, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 50);
+  };
+  tick();
+  // nach Standby/Hintergrund sofort richtig stellen
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) el.textContent = fmt.format(new Date());
+  });
+}
+
 // ---------- Start ----------
 
 async function init() {
   bindEvents();
   initFullscreen();
+  initClock();
   initPrint({ getSongs: () => state.songs, isActive });
   try {
     await loadOfflineIndex();
