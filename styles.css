@@ -1,5 +1,5 @@
 :root {
-  --css-version: "35";
+  --css-version: "36";
   color-scheme: dark;
   --bg: #0e0e10;
   --surface: #1a1a1d;
@@ -351,6 +351,13 @@ body.viewer-open { overflow: hidden; }
 .icon-btn .fs-exit { display: none; }
 .is-fullscreen .icon-btn .fs-enter { display: none; }
 .is-fullscreen .icon-btn .fs-exit { display: inline; }
+/* Uhrzeit links neben dem Vollbild-Knopf */
+.clock {
+  margin-left: auto; color: var(--silver); font-size: 1.25rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: 0.03em; white-space: nowrap;
+}
+.clock + .icon-btn { margin-left: 0; }
+@media (max-width: 400px) { .clock { font-size: 1.05rem; } }
 
 /* ---------- Drucken ---------- */
 .print-form { display: grid; gap: 12px; margin-bottom: 8px; }
