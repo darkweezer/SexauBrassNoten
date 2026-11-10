@@ -1,5 +1,5 @@
 :root {
-  --css-version: "36";
+  --css-version: "37";
   color-scheme: dark;
   --bg: #0e0e10;
   --surface: #1a1a1d;
@@ -297,23 +297,15 @@ body.viewer-open { overflow: hidden; }
 /* Beim Zoomen nur die runden Pfeile antippbar lassen, damit man am Rand verschieben kann */
 .viewer.is-zoomed .viewer-nav { pointer-events: none; padding-top: 12px; }
 .viewer.is-zoomed .viewer-nav span { pointer-events: auto; }
-.viewer-reset {
-  flex: 0 0 auto; height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--accent);
-  background: transparent; color: var(--accent); font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer;
-}
-.viewer-reset.is-off { visibility: hidden; }
-/* Bar: Titel | Zoom zurück (mittig) | − + ✕ */
-.viewer-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-.viewer-bar .viewer-tools { display: flex; gap: 8px; justify-content: flex-end; }
+/* Zoom-Knöpfe (zurücksetzen, als Standard speichern): nur Symbol, links vor den übrigen Symbolen */
+.viewer-reset, .viewer-save-zoom { border-color: var(--accent); color: var(--accent); background: transparent; }
+/* Bar: Titel | Knöpfe */
+.viewer-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.viewer-bar .viewer-tools { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 .viewer-btn svg { display: block; margin: auto; }
 .viewer-print.is-busy { animation: viewer-pulse 1s ease-in-out infinite; }
 @keyframes viewer-pulse { 50% { opacity: 0.4; } }
 /* Admin: Zoom als Standard speichern */
-.viewer-save-zoom {
-  flex: 0 0 auto; height: 44px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--accent);
-  background: transparent; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 6px;
-}
 .viewer-save-zoom:disabled { opacity: 0.5; }
 .viewer-save-zoom.hidden { display: none; }
 /* Akkustand (nur Chrome/Edge) */
@@ -329,15 +321,11 @@ body.viewer-open { overflow: hidden; }
 .viewer-battery.hidden { display: none; }
 /* schmale Bildschirme: Knöpfe etwas kleiner, Titel bekommt den Rest */
 @media (max-width: 600px) {
-  .viewer-bar { grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding-left: 10px; padding-right: 6px; }
+  .viewer-bar { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding-left: 10px; padding-right: 6px; }
   .viewer-bar .viewer-tools { gap: 4px; }
   .viewer-btn { width: 38px; height: 38px; font-size: 1.05rem; }
-  .viewer-save-zoom { height: 38px; padding: 0 9px; }
-  .viewer-save-zoom span { display: none; }
   .viewer-battery { font-size: 0.78rem; gap: 2px; padding: 0 2px 0 0; }
   .viewer-battery svg { width: 18px; height: 18px; }
-  .viewer-reset { height: 36px; padding: 0 10px; }
-  .viewer-reset.is-off { display: none; }
 }
 /* Noten drucken: nur auf Papier sichtbar */
 .sheet-print { display: none; }
