@@ -1,7 +1,7 @@
 // NotenApp – eingebauter PDF-Betrachter
 //
 // Zeigt eine oder mehrere PDFs (z. B. "Seite 1" und "Seite 2" einer Stimme) als durchgehende Seitenfolge.
-// Blättern: wischen, links/rechts auf den Rand tippen, Pfeiltasten oder Bluetooth-Fußpedal (Bild-ab/Leertaste).
+// Blättern: wischen, links/rechts auf den Rand tippen (auch im Zoom), Pfeiltasten oder Bluetooth-Fußpedal (Bild-ab/Leertaste).
 // Zoomen: mit zwei Fingern aufziehen, Doppeltipp, die Knöpfe − / + oder Strg + Mausrad.
 // Zoom und Ausschnitt werden je Seite und Nutzer auf dem Gerät gespeichert und beim nächsten Öffnen wiederhergestellt.
 // Admins können mit „Zoom speichern“ den aktuellen Zoom einer Seite als Standard für alle festlegen (Status-Datei in Drive).
@@ -41,6 +41,7 @@ const sameView = (a, b) => Math.abs((a?.z ?? 1) - (b?.z ?? 1)) < 0.02
   && ((a?.z ?? 1) <= 1.01 || (Math.abs((a?.x ?? 0.5) - (b?.x ?? 0.5)) < 0.02 && Math.abs((a?.y ?? 0) - (b?.y ?? 0)) < 0.02));
 
 const ICON_PRINT = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>`;
+const ICON_RESET = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/><path d="M8 10.5h5"/></svg>`;
 const ICON_SAVE = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8V3"/><rect x="7" y="13" width="10" height="8" rx="1"/></svg>`;
 
 /**
@@ -187,11 +188,11 @@ function buildDom(title) {
   root.innerHTML = `
     <div class="viewer-bar">
       <div class="viewer-title"><strong></strong><span class="viewer-page"></span></div>
-      <button class="viewer-reset is-off" type="button" aria-label="Zoom zurücksetzen">↺ Zoom</button>
       <div class="viewer-tools">
+      <button class="viewer-btn viewer-reset" type="button" aria-label="Zoom zurücksetzen (ganze Seite)" title="Zoom zurücksetzen (ganze Seite)" disabled>${ICON_RESET}</button>
+      <button class="viewer-btn viewer-save-zoom hidden" type="button" aria-label="Zoom dieser Seite als Standard für alle speichern" title="Zoom dieser Seite als Standard für alle speichern">${ICON_SAVE}</button>
       <span class="viewer-battery hidden" role="img"></span>
       <button class="viewer-btn viewer-print" type="button" aria-label="Drucken" title="Drucken" disabled>${ICON_PRINT}</button>
-      <button class="viewer-save-zoom hidden" type="button" aria-label="Zoom dieser Seite als Standard für alle speichern" title="Zoom dieser Seite als Standard für alle speichern">${ICON_SAVE}<span>Zoom</span></button>
       <button class="viewer-btn viewer-zoom-out" type="button" aria-label="Verkleinern">−</button>
       <button class="viewer-btn viewer-zoom-in" type="button" aria-label="Vergrößern">+</button>
       <button class="viewer-btn viewer-close" type="button" aria-label="Schließen">✕</button>
@@ -228,7 +229,7 @@ function updateBar(v) {
   $(".viewer-nav.next", v.root).disabled = v.index >= total - 1 && !loading;
   $(".viewer-zoom-out", v.root).disabled = v.zoom <= MIN_ZOOM + 0.01;
   $(".viewer-zoom-in", v.root).disabled = v.zoom >= MAX_ZOOM - 0.01;
-  $(".viewer-reset", v.root).classList.toggle("is-off", v.zoom <= 1.01);
+  $(".viewer-reset", v.root).disabled = v.zoom <= 1.01;
   $(".viewer-print", v.root).disabled = !total || v.printing;
   $(".viewer-save-zoom", v.root).classList.toggle("hidden", !v.canSaveZoom() || !p);
   v.root.classList.toggle("is-zoomed", v.zoom > 1.01);
@@ -569,7 +570,8 @@ function bindControls(v) {
       t0 = null;
       e.preventDefault();
     } else if (e.touches.length === 1 && !pinch) {
-      t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+      // Scroll-Position merken: stand der Ausschnitt schon am Rand, darf ein Wischen auch im Zoom umblättern
+      t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), left: stage.scrollLeft };
     }
   }, { passive: false });
 
@@ -599,12 +601,26 @@ function bindControls(v) {
     const t = e.changedTouches[0];
     const dx = t.clientX - t0.x, dy = t.clientY - t0.y;
     const quick = Date.now() - t0.t < 800;
+    const start = t0;
     t0 = null;
-    if (v.zoom <= 1.01 && quick && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      go(v, dx < 0 ? 1 : -1);
-      return;
+    if (quick && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      // ohne Zoom immer; im Zoom nur, wenn der Ausschnitt in Wischrichtung schon am Rand war
+      // (bzw. die Seite gar nicht seitlich verschiebbar ist) – sonst verschiebt das Wischen nur den Ausschnitt
+      const maxX = stage.scrollWidth - stage.clientWidth;
+      const atEdge = dx < 0 ? start.left >= maxX - 2 : start.left <= 2;
+      if (v.zoom <= 1.01 || atEdge) {
+        go(v, dx < 0 ? 1 : -1);
+        return;
+      }
     }
     if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+      // im Zoom: Tipp auf den linken/rechten Rand blättert um (wie ohne Zoom)
+      if (v.zoom > 1.01) {
+        const s = stage.getBoundingClientRect();
+        const edge = Math.min(140, s.width * 0.18);
+        const side = t.clientX - s.left < edge ? -1 : s.right - t.clientX < edge ? 1 : 0;
+        if (side) { e.preventDefault(); lastTap = 0; go(v, side); return; }
+      }
       const now = Date.now();
       if (now - lastTap < 300) { e.preventDefault(); doubleTap(t.clientX, t.clientY); lastTap = 0; }
       else lastTap = now;

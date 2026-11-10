@@ -131,6 +131,6 @@ Zoom und Ausschnitt werden je Seite und Nutzer im Browser gespeichert (`localSto
 **Drucken:** Der Drucker-Knopf zeichnet alle Seiten der geöffneten Stimme mit etwa 200 dpi als Bilder in einen Druckbereich und öffnet den Druckdialog
 (funktioniert so auch auf iPad und Android).
 
-**Standard-Zoom (nur Admins):** Der Knopf „Zoom“ mit Speichersymbol speichert Zoom und Ausschnitt der aktuellen Seite in der Status-Datei
+**Standard-Zoom (nur Admins):** Der Knopf mit Speichersymbol (oben links neben der Lupe) speichert Zoom und Ausschnitt der aktuellen Seite in der Status-Datei
 (Feld `zoom`, Schlüssel `<Datei-ID>:<Seite>`, mit Zeitstempel `t`). Beim Öffnen gilt, was neuer ist: der Standard oder der eigene Zoom der Person.
 Bei ganzer Seite gedrückt, wird der Standard entfernt. Speichern braucht wie die Verwaltung Bearbeiterrechte im ersten Noten-Ordner.
