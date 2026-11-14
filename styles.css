@@ -1,5 +1,5 @@
 :root {
-  --css-version: "38";
+  --css-version: "39";
   color-scheme: dark;
   --bg: #0e0e10;
   --surface: #1a1a1d;
@@ -348,6 +348,57 @@ body.viewer-open { overflow: hidden; }
   .viewer-btn { width: 38px; height: 38px; font-size: 1.05rem; }
   .viewer-battery { font-size: 0.78rem; gap: 2px; padding: 0 2px 0 0; }
   .viewer-battery svg { width: 18px; height: 18px; }
+}
+/* Markieren: eigene Ebene genau über der Notenseite */
+.viewer-sheet { position: relative; display: block; will-change: transform; }
+.viewer-marks {
+  position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
+  mix-blend-mode: multiply; /* Textmarker färbt das Papier, die Noten bleiben schwarz */
+}
+.viewer-canvas:not([style*="width"]) + .viewer-marks { display: none; }
+.viewer.is-editing .viewer-marks { pointer-events: auto; touch-action: none; cursor: crosshair; }
+.viewer.is-editing .viewer-nav { pointer-events: none; }
+.viewer.is-editing .viewer-nav span { pointer-events: auto; }
+.viewer-mark.is-active { background: var(--accent); color: #111; border-color: var(--accent); }
+.viewer-mark.has-marks:not(.is-active) { border-color: var(--accent); color: var(--accent); }
+.viewer .viewer-textinput, .viewer .viewer-textinput:focus {
+  position: absolute; z-index: 3; transform: translateY(-60%); width: 10em; min-width: 0; min-height: 0; max-width: 70%; box-shadow: none;
+  font-weight: 600; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: rgba(255, 255, 255, 0.92); border: 2px dashed currentColor; border-radius: 6px;
+  padding: 0.1em 0.3em; margin: 0 0 0 -0.35em; outline: none; line-height: 1.2; height: auto;
+}
+/* Werkzeugleiste unten; die Seite wird solange etwas kleiner, damit nichts verdeckt ist */
+.viewer-marktools {
+  position: relative; flex: none; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 6px 14px; padding: 6px 10px; padding-bottom: max(6px, env(safe-area-inset-bottom));
+  background: rgba(20, 20, 22, 0.97); border-top: 1px solid var(--border);
+}
+.viewer-marktools.hidden { display: none; }
+.mt-group { display: flex; gap: 4px; align-items: center; }
+.mt-btn {
+  display: grid; justify-items: center; gap: 1px; min-width: 52px; padding: 5px 4px 3px; border-radius: 10px;
+  border: 1px solid transparent; background: transparent; color: var(--text); font-size: 0.7rem; cursor: pointer;
+}
+.mt-btn svg { display: block; }
+.mt-btn.is-active { background: var(--surface-2); border-color: var(--accent); color: var(--accent); }
+.mt-btn:disabled { opacity: 0.35; cursor: default; }
+.mt-clear.is-confirm { color: #ff5a4f; border-color: #ff5a4f; }
+.mt-color {
+  width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--border); background: var(--c); cursor: pointer; padding: 0;
+}
+.mt-color.is-active { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.mt-colors.is-disabled { opacity: 0.3; pointer-events: none; }
+.mt-sync {
+  display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--muted);
+  font-size: 0.78rem; cursor: pointer; padding: 4px 6px;
+}
+.mt-sync[data-status="aus"], .mt-sync[data-status="fehler"] { color: var(--accent); text-decoration: underline; }
+.mt-sync:disabled { cursor: default; }
+.mt-done { padding: 8px 16px; }
+@media (max-width: 600px) {
+  .viewer-marktools { gap: 4px 8px; padding: 4px 6px; padding-bottom: max(4px, env(safe-area-inset-bottom)); }
+  .mt-btn { min-width: 44px; font-size: 0.62rem; }
+  .mt-color { width: 26px; height: 26px; }
 }
 /* Noten drucken: nur auf Papier sichtbar */
 .sheet-print { display: none; }
