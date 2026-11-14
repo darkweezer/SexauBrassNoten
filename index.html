@@ -91,8 +91,19 @@
       </label>
       <p id="result-count" class="hint" aria-live="polite"></p>
       <button id="save-all-btn" class="btn secondary save-all hidden" type="button">Alle herunterladen</button>
+      <div id="fav-box" class="fav-box hidden">
+        <div class="fav-head">
+          <h2 class="list-title"><span class="star-on" aria-hidden="true">★</span> Favoriten</h2>
+          <button id="fav-sort-btn" class="btn secondary small" type="button">Reihenfolge ändern</button>
+        </div>
+        <p id="fav-sort-hint" class="hint hidden">Mit ▲ und ▼ verschieben oder am Griff ≡ ziehen. Danach auf „Fertig“ tippen.</p>
+        <table id="fav-table" class="admin-table song-table fav-table">
+          <tbody id="fav-list"></tbody>
+        </table>
+        <h2 class="list-title all-title">Alle Stücke</h2>
+      </div>
       <table id="song-table" class="admin-table song-table">
-        <thead><tr><th class="num">Nr.</th><th>Stück</th><th class="switch-cell">Offline</th></tr></thead>
+        <thead><tr><th class="fav-cell"><span class="visually-hidden">Favorit</span></th><th class="num">Nr.</th><th>Stück</th><th class="switch-cell">Offline</th></tr></thead>
         <tbody id="song-list"></tbody>
       </table>
     </section>
@@ -227,6 +238,8 @@
       </ol>
       <h2>Noten offline speichern</h2>
       <p>Oben das eigene Instrument (und bei Bedarf die Stimme) wählen. Dann beim Stück den Schalter „Offline“ einschalten. Die Noten sind danach auch ohne Internet da; mit dem Haken „Nur offline gespeicherte“ siehst du nur noch diese. Schalter wieder aus = vom Gerät entfernen. Ein Tipp auf den Titel zeigt die einzelnen Stimmen zum Öffnen.</p>
+      <h2>Favoriten</h2>
+      <p>Mit dem Stern ☆ links neben der Nummer markierst du ein Stück als Favorit. Favoriten stehen ganz oben im Bereich „Noten“ in einer eigenen Liste. Mit „Reihenfolge ändern“ kannst du sie mit ▲ und ▼ verschieben oder am Griff ≡ an die gewünschte Stelle ziehen, zum Beispiel in der Reihenfolge eines Auftritts. Nochmal auf den Stern tippen entfernt den Favoriten. Die Favoriten gelten nur für dieses Gerät.</p>
       <h2>Inhaltsverzeichnis drucken</h2>
       <p>Im Reiter „Verzeichnis“ wählst du nur aktive oder alle Stücke, Hochkant oder Quer und auf wie viele Seiten es passen soll. Die Schrift passt sich automatisch an. „Drucken / als PDF speichern“ öffnet den Druckdialog des Browsers; dort kann man auch „Als PDF speichern“ wählen.</p>
       <h2>Vollbild</h2>

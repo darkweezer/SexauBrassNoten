@@ -13,7 +13,7 @@ import { openViewer, renderPdfStrip } from "./viewer.js";
 import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
-const APP_VERSION = "37"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
+const APP_VERSION = "38"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
@@ -24,6 +24,7 @@ const LS_STIMME = "notenarchiv.stimme";
 const LS_STATUS = "notenarchiv.inaktiv";
 const LS_USER = "notenapp.nutzer";
 const LS_SOLO = "notenapp.solo";
+const LS_FAVS = "notenapp.favoriten"; // Favoriten in eigener Reihenfolge (nur auf diesem Gerät)
 
 const state = {
   songs: [],          // [{ id, number, title, files: [{ id, name, voice, instrument, instruments, size }] }]
@@ -45,6 +46,8 @@ const state = {
   zVersion: 0,
   assignOpen: new Set(),
   assignExtra: new Map(), // Verwaltung: Zeilen inkl. noch leerer Zeilen je Stimme
+  favs: [],           // Favoriten: Stück-IDs in der selbst gewählten Reihenfolge
+  favSorting: false,  // Favoriten: Reihenfolge wird gerade geändert
 };
 
 // ---------- Hilfsfunktionen ----------
@@ -1007,13 +1010,36 @@ function renderSongs() {
       : `Alle herunterladen (${visible.length} ${visible.length === 1 ? "Stück" : "Stücke"}, ${missing} ${missing === 1 ? "Datei" : "Dateien"})`);
   }
 
-  $("#song-list").innerHTML = visible.map((song) => {
+  // Favoriten oben in eigener Liste (gleiche Filter, beim Sortieren alle)
+  const favSet = new Set(state.favs);
+  const lookup = new Map([...state.songs, ...offlineOnlySongs()].map((s) => [s.id, s]));
+  const favAll = state.favs.map((id) => lookup.get(id)).filter(Boolean);
+  const favVisible = state.favSorting ? favAll : favAll
+    .filter((s) => matchesSearch(s, query))
+    .filter((s) => !filtering || s.files.some((f) => fileMatches(f, instrument, stimme)))
+    .filter((s) => !onlyOffline || hasOffline(s));
+  if (state.favSorting && favAll.length === 0) state.favSorting = false;
+  $("#fav-box").classList.toggle("hidden", favVisible.length === 0);
+  $("#fav-table").classList.toggle("is-sorting", state.favSorting);
+  $("#fav-sort-hint").classList.toggle("hidden", !state.favSorting);
+  const sortBtn = $("#fav-sort-btn");
+  sortBtn.textContent = state.favSorting ? "Fertig" : "Reihenfolge ändern";
+  sortBtn.classList.toggle("secondary", !state.favSorting);
+  sortBtn.classList.toggle("hidden", favAll.length < 2 && !state.favSorting);
+  const ctx = { instrument, stimme, filtering, favSet };
+  $("#fav-list").innerHTML = favVisible.map((song, i) =>
+    songRowHtml(song, { ...ctx, prefix: "fav:", sorting: state.favSorting, index: i, total: favVisible.length })).join("");
+  $("#song-list").innerHTML = visible.map((song) => songRowHtml(song, { ...ctx, prefix: "" })).join("");
+}
+
+function songRowHtml(song, { instrument, stimme, filtering, favSet, prefix, sorting = false, index = 0, total = 0 }) {
     const target = song.orphan ? song.files : targetFiles(song);
     const offTarget = target.filter((f) => state.offline.has(f.id)).length;
     const offAll = song.files.filter((f) => state.offline.has(f.id)).length;
     const on = target.length > 0 && offTarget === target.length;
     const busy = state.saving.get(song.id);
-    const open = state.expanded.has(song.id);
+    const open = !sorting && state.expanded.has(prefix + song.id);
+    const fav = favSet.has(song.id);
 
     const nVoices = new Set(song.files.map((f) => voiceBase(f.voice))).size;
     let meta = filtering ? groupVoices(target).map((g) => g.label).join(" · ") : `${nVoices} ${nVoices === 1 ? "Stimme" : "Stimmen"}`;
@@ -1025,25 +1051,36 @@ function renderSongs() {
     const quick = instrument && stimme && !busy ? quickButtons(target) : "";
     const inactive = !song.orphan && !isActive(song);
     return `
-      <tr class="song-row${inactive ? " is-inactive" : ""}${open ? " is-open" : ""}">
+      <tr class="song-row${inactive ? " is-inactive" : ""}${open ? " is-open" : ""}" data-song-id="${escapeHtml(song.id)}">
+        <td class="fav-cell">${sorting
+          ? `<span class="drag-handle" data-drag role="img" aria-label="Zum Verschieben ziehen" title="Ziehen zum Verschieben">≡</span>`
+          : `<button type="button" class="fav-btn${fav ? " is-fav" : ""}" data-fav="${escapeHtml(song.id)}" aria-pressed="${fav}"
+              aria-label="${escapeHtml(song.title)} ${fav ? "aus Favoriten entfernen" : "als Favorit markieren"}"
+              title="${fav ? "Aus Favoriten entfernen" : "Als Favorit markieren"}">${fav ? "★" : "☆"}</button>`}</td>
         <td class="num">${song.number ?? "–"}</td>
-        <td class="song-cell" data-expand="${escapeHtml(song.id)}" role="button" tabindex="0" aria-expanded="${open}">
+        <td class="song-cell" ${sorting ? "" : `data-expand="${escapeHtml(prefix + song.id)}" role="button" tabindex="0" aria-expanded="${open}"`}>
           <div class="song-line">
             <span class="song-name">${escapeHtml(song.title)}${inactive ? ` <span class="badge muted">nicht aktiv</span>` : ""}</span>
             ${quick}
           </div>
           ${quick ? "" : `<span class="admin-meta">${escapeHtml(meta)}</span>`}
         </td>
+        ${sorting ? `
+        <td class="switch-cell move-cell"><span class="move-btns">
+          <button type="button" class="move-btn" data-move="-1" ${index === 0 ? "disabled" : ""} aria-label="${escapeHtml(song.title)} nach oben">▲</button>
+          <button type="button" class="move-btn" data-move="1" ${index === total - 1 ? "disabled" : ""} aria-label="${escapeHtml(song.title)} nach unten">▼</button>
+        </span></td>` : `
         <td class="switch-cell">
           <label class="switch">
             <input type="checkbox" data-offline-song="${escapeHtml(song.id)}" ${on ? "checked" : ""} ${busy ? "disabled" : ""} />
             <span class="slider" aria-hidden="true"></span>
             <span class="visually-hidden">${escapeHtml(song.title)} offline speichern</span>
           </label>
-        </td>
+        </td>`}
       </tr>
       ${open ? `
       <tr class="voices-row">
+        <td></td>
         <td></td>
         <td colspan="2">
           <div class="voices">${chips(target)}</div>
@@ -1054,7 +1091,77 @@ function renderSongs() {
             </details>` : ""}
         </td>
       </tr>` : ""}`;
-  }).join("");
+}
+
+// ---------- Favoriten ----------
+
+function loadFavs() {
+  try {
+    const list = JSON.parse(lsGet(LS_FAVS) || "[]");
+    state.favs = Array.isArray(list) ? [...new Set(list.filter((x) => typeof x === "string"))] : [];
+  } catch { state.favs = []; }
+}
+
+function saveFavs() { lsSet(LS_FAVS, JSON.stringify(state.favs)); }
+
+function toggleFav(songId) {
+  const i = state.favs.indexOf(songId);
+  if (i >= 0) state.favs.splice(i, 1); else state.favs.push(songId);
+  saveFavs();
+  renderSongs();
+  toast(i >= 0 ? "Aus Favoriten entfernt" : "Zu Favoriten hinzugefügt (oben in der Liste)");
+}
+
+const shownFavOrder = () => [...document.querySelectorAll("#fav-list tr[data-song-id]")].map((r) => r.dataset.songId);
+
+// Angezeigte Reihenfolge übernehmen; nicht angezeigte Favoriten (z. B. noch nicht geladen) hinten behalten
+function storeFavOrder(order) {
+  state.favs = [...order, ...state.favs.filter((id) => !order.includes(id))];
+  saveFavs();
+  renderSongs();
+}
+
+function moveFav(songId, delta) {
+  const order = shownFavOrder();
+  const i = order.indexOf(songId);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  storeFavOrder(order);
+  // Fokus auf dem verschobenen Stück lassen (Tastatur, mehrmals tippen)
+  const row = [...document.querySelectorAll("#fav-list tr[data-song-id]")].find((r) => r.dataset.songId === songId);
+  (row?.querySelector(`[data-move="${delta}"]:not(:disabled)`) ?? row?.querySelector("[data-move]:not(:disabled)"))?.focus();
+}
+
+// Ziehen am Griff ≡ (Maus und Finger)
+function initFavDrag() {
+  const list = $("#fav-list");
+  list.addEventListener("pointerdown", (e) => {
+    const handle = e.target.closest("[data-drag]");
+    if (!handle) return;
+    e.preventDefault();
+    const row = handle.closest("tr");
+    row.classList.add("is-dragging");
+    const move = (ev) => {
+      const rows = [...list.querySelectorAll("tr[data-song-id]")];
+      const after = rows.find((r) => r !== row && ev.clientY < r.getBoundingClientRect().top + r.offsetHeight / 2);
+      if (after) { if (after !== row.nextElementSibling) list.insertBefore(row, after); }
+      else if (row !== list.lastElementChild) list.appendChild(row);
+      // am Bildschirmrand mitscrollen
+      if (ev.clientY < 60) window.scrollBy(0, -12); else if (ev.clientY > window.innerHeight - 60) window.scrollBy(0, 12);
+    };
+    const end = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", end);
+      document.removeEventListener("pointercancel", end);
+      row.classList.remove("is-dragging");
+      storeFavOrder(shownFavOrder());
+    };
+    // am Dokument lauschen: das Verschieben der Zeile hebt eine Zeiger-Bindung an den Griff auf
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", end);
+    document.addEventListener("pointercancel", end);
+  });
 }
 
 function quickButtons(files) {
@@ -1333,24 +1440,32 @@ function bindEvents() {
     renderSongs();
   });
   $("#save-all-btn").addEventListener("click", saveAllVisible);
-  $("#song-list").addEventListener("change", (e) => {
-    const box = e.target.closest("[data-offline-song]");
-    if (box) toggleOffline(box.dataset.offlineSong, box.checked);
-  });
   const expand = (cell) => {
     const id = cell.dataset.expand;
     if (state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id);
     renderSongs();
   };
-  $("#song-list").addEventListener("click", (e) => {
-    if (e.target.closest("[data-open]")) return; // Schnellbutton öffnet nur die Note
-    const c = e.target.closest("[data-expand]");
-    if (c) expand(c);
-  });
-  $("#song-list").addEventListener("keydown", (e) => {
-    const c = e.target.closest("[data-expand]");
-    if (c && e.target === c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); expand(c); }
-  });
+  for (const list of [$("#song-list"), $("#fav-list")]) {
+    list.addEventListener("change", (e) => {
+      const box = e.target.closest("[data-offline-song]");
+      if (box) toggleOffline(box.dataset.offlineSong, box.checked);
+    });
+    list.addEventListener("click", (e) => {
+      const favBtn = e.target.closest("[data-fav]");
+      if (favBtn) return toggleFav(favBtn.dataset.fav);
+      const moveBtn = e.target.closest("[data-move]");
+      if (moveBtn) return moveFav(moveBtn.closest("tr").dataset.songId, Number(moveBtn.dataset.move));
+      if (e.target.closest("[data-open]")) return; // Schnellbutton öffnet nur die Note
+      const c = e.target.closest("[data-expand]");
+      if (c) expand(c);
+    });
+    list.addEventListener("keydown", (e) => {
+      const c = e.target.closest("[data-expand]");
+      if (c && e.target === c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); expand(c); }
+    });
+  }
+  $("#fav-sort-btn").addEventListener("click", () => { state.favSorting = !state.favSorting; renderSongs(); });
+  initFavDrag();
   $("#login-btn").addEventListener("click", handleLoginClick);
   initAccessRequest();
   $("#logout-btn").addEventListener("click", () => {
@@ -1452,6 +1567,7 @@ async function init() {
   // Zuletzt geladene Stückliste sofort zeigen (funktioniert auch ohne Internet)
   loadCachedSongs();
   loadCachedStatus();
+  loadFavs();
   populateInstrumentFilter();
   renderSongs();
   updateStorageEstimate();
