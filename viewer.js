@@ -8,6 +8,10 @@
 // Was neuer ist, gilt: ein später gespeicherter Standard ersetzt den eigenen Zoom, eigenes Zoomen danach ersetzt den Standard.
 // „Drucken“ druckt alle Seiten der geöffneten Stimme (ganze Seiten, ohne Zoom).
 // Die PDF-Bibliothek (pdf.js von Mozilla) liegt im Ordner vendor/pdfjs und funktioniert damit auch offline.
+// Markieren (Stift-Knopf): eigene Kreise, Textmarker, Striche und Texte auf der Seite (siehe marks.js).
+//   Im Markier-Modus zeichnet ein Finger, zwei Finger zoomen und verschieben. Die PDF selbst bleibt unverändert.
+
+import { drawMarks, hitMark, roundPoint, MARK_COLORS, TEXT_SIZE } from "./marks.js";
 
 let pdfjsPromise = null;
 function loadPdfJs() {
@@ -42,6 +46,18 @@ const sameView = (a, b) => Math.abs((a?.z ?? 1) - (b?.z ?? 1)) < 0.02
 
 const ICON_PRINT = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>`;
 const ICON_RESET = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/><path d="M8 10.5h5"/></svg>`;
+const ICON_PEN = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/></svg>`;
+const svg = (body) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+const MARK_TOOLS = [
+  { id: "c", label: "Kreis", icon: svg(`<ellipse cx="12" cy="12" rx="8.5" ry="6.5"/>`) },
+  { id: "m", label: "Textmarker", icon: svg(`<path d="M3 17h12" stroke-width="5" opacity="0.45"/><path d="M14 4l5 5-7 7H7v-5z"/>`) },
+  { id: "p", label: "Stift", icon: svg(`<path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/>`) },
+  { id: "t", label: "Text", icon: svg(`<path d="M5 6V4h14v2"/><path d="M12 4v16"/><path d="M9 20h6"/>`) },
+  { id: "e", label: "Radierer", icon: svg(`<path d="M8 20h12"/><path d="M4.5 15.5l9.5-9.5 5 5-8 8H8z"/><path d="M9.5 10.5l5 5"/>`) },
+];
+const ICON_UNDO = svg(`<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>`);
+const ICON_TRASH = svg(`<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/>`);
+const ICON_CLOUD = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9a4.5 4.5 0 0 0 1 9z"/></svg>`;
 const ICON_SAVE = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8V3"/><rect x="7" y="13" width="10" height="8" rx="1"/></svg>`;
 
 /**
@@ -55,11 +71,12 @@ const ICON_SAVE = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="
  * @param {()=>object} [opts.zoomDefaults]  Standard-Zoom aller Seiten: "<fileId>:<Seite>" -> { z, x, y, t }
  * @param {()=>boolean} [opts.canSaveZoom]  darf diese Person den Standard-Zoom speichern (Admin)?
  * @param {(key:string, view:object|null)=>Promise<boolean>} [opts.onSaveZoom]  Standard speichern (null = Standard entfernen)
+ * @param {object|null} [opts.marks]  persönliche Markierungen dieser Person (createMarks aus marks.js)
  */
 export async function openViewer({ title, files, start = 0, loadBlob, zoomKey = "notenapp.zoom", reauth,
-  zoomDefaults = () => ({}), canSaveZoom = () => false, onSaveZoom }) {
+  zoomDefaults = () => ({}), canSaveZoom = () => false, onSaveZoom, marks = null }) {
   closeViewer();
-  const root = buildDom(title);
+  const root = buildDom(title, Boolean(marks));
   const v = {
     root, files, loadBlob, zoomKey, reauth, start, zoomDefaults, canSaveZoom, onSaveZoom, title,
     zoomStore: loadZoomStore(zoomKey),
@@ -70,10 +87,17 @@ export async function openViewer({ title, files, start = 0, loadBlob, zoomKey = 
     renderTask: null,
     renderSeq: 0,
     blobs: new Map(),
+    marks,
+    editing: false,   // Markier-Modus an?
+    tool: "c",
+    colors: { c: "#e3241b", m: "#ffd400", p: "#e3241b", t: "#e3241b" },
+    undo: [],         // { key, items } – Stand vor der Änderung
+    drawing: null,    // gerade gezeichnete Markierung
   };
   current = v;
   history.pushState({ viewer: true }, "");
   bindControls(v);
+  if (marks) bindMarks(v);
   watchBattery(v);
   await loadAll(v);
 }
@@ -133,6 +157,8 @@ export function closeViewer(fromHistory = false) {
   window.removeEventListener("resize", v.onResize);
   window.removeEventListener("popstate", v.onPop);
   v.stopBattery?.();
+  v.stopMarks?.();
+  v.marks?.flush();
   removePrintSheet();
   v.root.remove();
   document.body.classList.remove("viewer-open");
@@ -180,7 +206,7 @@ function insertPages(v, fileIdx, doc) {
   if (cur) v.index = v.pages.indexOf(cur);
 }
 
-function buildDom(title) {
+function buildDom(title, withMarks) {
   const root = document.createElement("div");
   root.className = "viewer";
   root.setAttribute("role", "dialog");
@@ -190,6 +216,7 @@ function buildDom(title) {
       <div class="viewer-title"><strong></strong><span class="viewer-page"></span></div>
       <div class="viewer-tools">
       <button class="viewer-btn viewer-reset" type="button" aria-label="Zoom zurücksetzen (ganze Seite)" title="Zoom zurücksetzen (ganze Seite)" disabled>${ICON_RESET}</button>
+      ${withMarks ? `<button class="viewer-btn viewer-mark" type="button" aria-label="Markieren" title="Markieren" aria-pressed="false" disabled>${ICON_PEN}</button>` : ""}
       <button class="viewer-btn viewer-save-zoom hidden" type="button" aria-label="Zoom dieser Seite als Standard für alle speichern" title="Zoom dieser Seite als Standard für alle speichern">${ICON_SAVE}</button>
       <span class="viewer-battery hidden" role="img"></span>
       <button class="viewer-btn viewer-print" type="button" aria-label="Drucken" title="Drucken" disabled>${ICON_PRINT}</button>
@@ -199,12 +226,13 @@ function buildDom(title) {
       </div>
     </div>
     <div class="viewer-stage">
-      <div class="viewer-inner"><canvas class="viewer-canvas"></canvas></div>
+      <div class="viewer-inner"><div class="viewer-sheet"><canvas class="viewer-canvas"></canvas><canvas class="viewer-marks"></canvas></div></div>
       <p class="viewer-status"></p>
       <button class="btn secondary viewer-fallback hidden" type="button">Im Browser öffnen</button>
       <button class="btn viewer-login hidden" type="button">Neu anmelden</button>
     </div>
     <button class="viewer-nav prev" type="button" aria-label="Vorherige Seite"><span><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span></button>
+    ${withMarks ? markToolbar() : ""}
     <button class="viewer-nav next" type="button" aria-label="Nächste Seite"><span><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></button>
 `;
   $(".viewer-title strong", root).textContent = title;
@@ -231,6 +259,8 @@ function updateBar(v) {
   $(".viewer-zoom-in", v.root).disabled = v.zoom >= MAX_ZOOM - 0.01;
   $(".viewer-reset", v.root).disabled = v.zoom <= 1.01;
   $(".viewer-print", v.root).disabled = !total || v.printing;
+  const markBtn = $(".viewer-mark", v.root);
+  if (markBtn) markBtn.disabled = !p;
   $(".viewer-save-zoom", v.root).classList.toggle("hidden", !v.canSaveZoom() || !p);
   v.root.classList.toggle("is-zoomed", v.zoom > 1.01);
 }
@@ -299,6 +329,303 @@ async function saveDefaultZoom(v, button) {
   }
 }
 
+// ---------- Markieren ----------
+// Eigene Ebene (.viewer-marks) genau über der Notenseite. Positionen als Anteil der Seite (0 … 1).
+
+function markToolbar() {
+  const tools = MARK_TOOLS.map((t) =>
+    `<button class="mt-btn mt-tool" type="button" data-tool="${t.id}" aria-label="${t.label}" title="${t.label}">${t.icon}<span>${t.label}</span></button>`).join("");
+  const colors = MARK_COLORS.map((c) =>
+    `<button class="mt-color" type="button" data-color="${c.value}" aria-label="Farbe ${c.label}" title="${c.label}" style="--c:${c.value}"></button>`).join("");
+  return `
+    <div class="viewer-marktools hidden" role="toolbar" aria-label="Markieren">
+      <div class="mt-group">${tools}</div>
+      <div class="mt-group mt-colors">${colors}</div>
+      <div class="mt-group">
+        <button class="mt-btn mt-undo" type="button" aria-label="Rückgängig" title="Rückgängig" disabled>${ICON_UNDO}<span>Zurück</span></button>
+        <button class="mt-btn mt-clear" type="button" aria-label="Alle Markierungen dieser Seite löschen" title="Alle Markierungen dieser Seite löschen" disabled>${ICON_TRASH}<span>Seite leeren</span></button>
+      </div>
+      <button class="mt-sync" type="button"></button>
+      <button class="btn mt-done" type="button">Fertig</button>
+    </div>`;
+}
+
+const currentKey = (v) => { const p = v.pages[v.index]; return p ? pageKey(p) : null; };
+
+function drawOverlay(v) {
+  const overlay = $(".viewer-marks", v.root);
+  if (!overlay || !v.marks || !v.cssW) return;
+  const key = currentKey(v);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.round(v.cssW * dpr), h = Math.round(v.cssH * dpr);
+  if (overlay.width !== w || overlay.height !== h) { overlay.width = w; overlay.height = h; }
+  const ctx = overlay.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  const items = key ? v.marks.get(key) : [];
+  drawMarks(ctx, v.drawing ? [...items, v.drawing.item] : items, w, h);
+  updateMarkButtons(v);
+}
+
+function updateMarkButtons(v) {
+  const bar = $(".viewer-marktools", v.root);
+  if (!bar) return;
+  const key = currentKey(v);
+  $(".mt-undo", bar).disabled = !v.undo.length;
+  $(".mt-clear", bar).disabled = !key || !v.marks.get(key).length;
+  const count = key ? v.marks.get(key).length : 0;
+  $(".viewer-mark", v.root)?.classList.toggle("has-marks", count > 0);
+}
+
+function updateToolButtons(v) {
+  const bar = $(".viewer-marktools", v.root);
+  for (const b of bar.querySelectorAll(".mt-tool")) {
+    const on = b.dataset.tool === v.tool;
+    b.classList.toggle("is-active", on);
+    b.setAttribute("aria-pressed", String(on));
+  }
+  const color = v.colors[v.tool];
+  for (const b of bar.querySelectorAll(".mt-color")) {
+    const on = b.dataset.color === color;
+    b.classList.toggle("is-active", on);
+    b.setAttribute("aria-pressed", String(on));
+  }
+  bar.querySelector(".mt-colors").classList.toggle("is-disabled", v.tool === "e");
+}
+
+function updateSyncButton(v) {
+  const btn = $(".mt-sync", v.root);
+  if (!btn || !v.marks) return;
+  const st = v.marks.status();
+  const texts = {
+    aus: "Nur im Gerät – in Drive sichern?",
+    bereit: "In Drive gesichert",
+    laeuft: "Wird gesichert …",
+    offline: "Offline – wird später gesichert",
+    fehler: "Sichern fehlgeschlagen – erneut versuchen",
+  };
+  btn.innerHTML = `${ICON_CLOUD}<span>${texts[st] ?? ""}</span>`;
+  btn.dataset.status = st;
+  btn.disabled = st === "laeuft" || st === "bereit";
+}
+
+async function setEditing(v, on) {
+  if (on === v.editing) return;
+  v.editing = on;
+  commitText(v);
+  cancelDrawing(v);
+  v.root.classList.toggle("is-editing", on);
+  $(".viewer-marktools", v.root).classList.toggle("hidden", !on);
+  const btn = $(".viewer-mark", v.root);
+  btn.classList.toggle("is-active", on);
+  btn.setAttribute("aria-pressed", String(on));
+  // Leiste unten nimmt Platz weg bzw. gibt ihn frei: Seite neu einpassen
+  await render(v, scrollFraction($(".viewer-stage", v.root)));
+  if (!on) v.marks.flush();
+}
+
+function cancelDrawing(v) {
+  if (!v.drawing) return;
+  v.drawing = null;
+  drawOverlay(v);
+}
+
+function commitMarks(v, key, items) {
+  v.undo.push({ key, items: v.marks.get(key) });
+  if (v.undo.length > 100) v.undo.shift();
+  v.marks.set(key, items);
+  drawOverlay(v);
+}
+
+function undoMark(v) {
+  const last = v.undo.pop();
+  if (!last) return;
+  v.marks.set(last.key, last.items);
+  const idx = v.pages.findIndex((p) => pageKey(p) === last.key);
+  if (idx >= 0 && idx !== v.index) { saveView(v); v.index = idx; showPage(v); }
+  else drawOverlay(v);
+}
+
+// Punkt unter dem Finger/Mauszeiger als Anteil der Seite
+function markPoint(v, e) {
+  const r = $(".viewer-marks", v.root).getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+}
+
+function eraseAt(v, pt) {
+  const key = currentKey(v);
+  if (!key) return;
+  const items = v.marks.get(key);
+  const keep = items.filter((it) => !hitMark(it, pt.x, pt.y, v.cssW, v.cssH, 12));
+  if (keep.length !== items.length) {
+    if (!v.drawing.erased) { v.undo.push({ key, items }); v.drawing.erased = true; }
+    v.marks.set(key, keep);
+    drawOverlay(v);
+  }
+}
+
+// Text: Eingabefeld direkt an der angetippten Stelle
+function openTextInput(v, pt) {
+  commitText(v);
+  const key = currentKey(v);
+  if (!key) return;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "viewer-textinput";
+  input.placeholder = "Text …";
+  input.maxLength = 60;
+  input.enterKeyHint = "done";
+  input.autocomplete = "off";
+  input.style.left = `${pt.x * 100}%`;
+  input.style.top = `${pt.y * 100}%`;
+  input.style.fontSize = `${TEXT_SIZE * v.cssW}px`;
+  input.style.color = v.colors.t;
+  v.textInput = { input, key, pt, color: v.colors.t };
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") { e.preventDefault(); commitText(v); }
+    else if (e.key === "Escape") { e.preventDefault(); commitText(v, true); }
+  });
+  input.addEventListener("blur", () => commitText(v));
+  $(".viewer-sheet", v.root).append(input);
+  input.focus({ preventScroll: true });
+}
+
+function commitText(v, cancel = false) {
+  const t = v.textInput;
+  if (!t) return;
+  v.textInput = null;
+  const text = t.input.value.trim();
+  t.input.remove();
+  if (cancel || !text) return;
+  const [x, y] = roundPoint(t.pt.x, t.pt.y - TEXT_SIZE * (v.cssW / v.cssH) * 0.6);
+  commitMarks(v, t.key, [...v.marks.get(t.key), { k: "t", c: t.color, x, y, s: text }]);
+}
+
+function bindMarks(v) {
+  const root = v.root;
+  const bar = $(".viewer-marktools", root);
+  const overlay = $(".viewer-marks", root);
+
+  $(".viewer-mark", root).addEventListener("click", async () => {
+    const on = !v.editing;
+    setEditing(v, on);
+    // Beim ersten Mal fragen, ob die Markierungen auch im eigenen Drive gesichert werden sollen.
+    // Das Google-Fenster muss direkt aus dem Klick heraus kommen.
+    if (on && v.marks.syncChoice() == null) {
+      v.marks.enableSync().catch(() => {}).finally(() => updateSyncButton(v));
+    }
+  });
+  $(".mt-done", bar).addEventListener("click", () => setEditing(v, false));
+  for (const b of bar.querySelectorAll(".mt-tool")) {
+    b.addEventListener("click", () => { commitText(v); v.tool = b.dataset.tool; updateToolButtons(v); });
+  }
+  for (const b of bar.querySelectorAll(".mt-color")) {
+    b.addEventListener("click", () => {
+      if (v.tool === "e") return;
+      v.colors[v.tool] = b.dataset.color;
+      if (v.textInput) { v.textInput.color = b.dataset.color; v.textInput.input.style.color = b.dataset.color; v.textInput.input.focus(); }
+      updateToolButtons(v);
+    });
+  }
+  $(".mt-undo", bar).addEventListener("click", () => undoMark(v));
+  const clearBtn = $(".mt-clear", bar);
+  let clearTimer;
+  clearBtn.addEventListener("click", () => {
+    const key = currentKey(v);
+    if (!key) return;
+    // zweimal tippen, damit nichts aus Versehen verloren geht
+    if (!clearBtn.classList.contains("is-confirm")) {
+      clearBtn.classList.add("is-confirm");
+      clearBtn.querySelector("span").textContent = "Wirklich?";
+      clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => { clearBtn.classList.remove("is-confirm"); clearBtn.querySelector("span").textContent = "Seite leeren"; }, 3000);
+      return;
+    }
+    clearTimeout(clearTimer);
+    clearBtn.classList.remove("is-confirm");
+    clearBtn.querySelector("span").textContent = "Seite leeren";
+    commitMarks(v, key, []);
+  });
+  $(".mt-sync", bar).addEventListener("click", () => {
+    v.marks.enableSync().catch(() => {}).finally(() => updateSyncButton(v));
+  });
+
+  overlay.addEventListener("pointerdown", (e) => {
+    if (!v.editing || v.drawing || e.button > 0) return;
+    const key = currentKey(v);
+    if (!key) return;
+    e.preventDefault();
+    const pt = markPoint(v, e);
+    if (v.tool === "t") {
+      // erst nach dem Loslassen öffnen, sonst nimmt der Tipp dem Feld gleich wieder den Fokus
+      const id = e.pointerId;
+      const up = (ev) => { if (ev.pointerId === id) { overlay.removeEventListener("pointerup", up); openTextInput(v, pt); } };
+      overlay.addEventListener("pointerup", up);
+      return;
+    }
+    overlay.setPointerCapture?.(e.pointerId);
+    commitText(v);
+    const color = v.colors[v.tool];
+    const [x, y] = roundPoint(pt.x, pt.y);
+    if (v.tool === "e") {
+      v.drawing = { id: e.pointerId, key, tool: "e", item: { k: "none" } };
+      eraseAt(v, pt);
+      return;
+    }
+    const item = v.tool === "c" ? { k: "c", c: color, x, y, w: 0, h: 0 } : { k: v.tool, c: color, p: [x, y] };
+    v.drawing = { id: e.pointerId, key, tool: v.tool, item, start: { x, y }, lastPx: { x: e.clientX, y: e.clientY } };
+    drawOverlay(v);
+  });
+
+  overlay.addEventListener("pointermove", (e) => {
+    const d = v.drawing;
+    if (!d || d.id !== e.pointerId) return;
+    e.preventDefault();
+    const pt = markPoint(v, e);
+    if (d.tool === "e") { eraseAt(v, pt); return; }
+    if (d.tool === "c") {
+      const [x, y] = roundPoint(pt.x, pt.y);
+      const r4 = (n) => Math.round(n * 10000) / 10000;
+      d.item = { ...d.item, x: Math.min(x, d.start.x), y: Math.min(y, d.start.y), w: r4(Math.abs(x - d.start.x)), h: r4(Math.abs(y - d.start.y)) };
+    } else {
+      // nur alle paar Pixel einen Punkt speichern (kleinere Datei)
+      if (Math.hypot(e.clientX - d.lastPx.x, e.clientY - d.lastPx.y) < 3) return;
+      d.lastPx = { x: e.clientX, y: e.clientY };
+      d.item.p.push(...roundPoint(pt.x, pt.y));
+    }
+    drawOverlay(v);
+  });
+
+  const finish = (e) => {
+    const d = v.drawing;
+    if (!d || d.id !== e.pointerId) return;
+    v.drawing = null;
+    if (d.tool === "e") { drawOverlay(v); return; }
+    let item = d.item;
+    if (item.k === "c" && Math.max(item.w * v.cssW, item.h * v.cssH) < 12) {
+      // nur getippt: Kreis in Standardgröße um die Stelle
+      const r = 0.035;
+      const rh = r * (v.cssW / v.cssH);
+      item = { ...item, x: Math.max(0, d.start.x - r), y: Math.max(0, d.start.y - rh), w: r * 2, h: rh * 2 };
+      const [x, y] = roundPoint(item.x, item.y);
+      item = { ...item, x, y, w: Math.round(item.w * 10000) / 10000, h: Math.round(item.h * 10000) / 10000 };
+    }
+    commitMarks(v, d.key, [...v.marks.get(d.key), item]);
+  };
+  overlay.addEventListener("pointerup", finish);
+  overlay.addEventListener("pointercancel", (e) => { if (v.drawing?.id === e.pointerId) cancelDrawing(v); });
+
+  // Abgleich mit Drive: Status anzeigen, neue Markierungen von anderen Geräten sofort zeigen
+  v.stopMarks = v.marks.onChange((what) => {
+    if (current !== v) return;
+    if (what === "pages") drawOverlay(v);
+    updateSyncButton(v);
+  });
+  updateToolButtons(v);
+  updateSyncButton(v);
+  v.marks.sync();
+}
+
 // ---------- Drucken ----------
 // Alle Seiten der geöffneten Stimme als Bilder in einen eigenen Druckbereich zeichnen und den Druckdialog öffnen.
 // Klappt so auch auf iPad und Android, wo man eine PDF in der Seite nicht direkt drucken kann.
@@ -337,6 +664,12 @@ async function printSheets(v) {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       await page.render({ canvasContext: ctx, viewport }).promise;
       if (current !== v) return;
+      const items = v.marks?.get(pageKey(p)) ?? [];
+      if (items.length) {
+        ctx.globalCompositeOperation = "multiply"; // Marker deckt die Noten nicht ab
+        drawMarks(ctx, items, canvas.width, canvas.height);
+        ctx.globalCompositeOperation = "source-over";
+      }
       const img = new Image();
       img.alt = `${v.title} – ${p.label} – Seite ${p.num}`;
       img.className = base.width > base.height ? "is-landscape" : "";
@@ -418,8 +751,11 @@ async function render(v, pos = {}) {
   canvas.height = off.height;
   canvas.style.width = `${cssW}px`;
   canvas.style.height = `${cssH}px`;
-  canvas.style.transform = "";
+  $(".viewer-sheet", v.root).style.transform = "";
   canvas.getContext("2d").drawImage(off, 0, 0);
+  v.cssW = cssW;
+  v.cssH = cssH;
+  drawOverlay(v);
   // Pfeile an den oberen Rand der Notenseite setzen (nicht in den grauen Bereich darüber)
   const stageTop = stage.getBoundingClientRect().top - v.root.getBoundingClientRect().top;
   const pageTop = Math.max(0, (stage.clientHeight - cssH) / 2);
@@ -471,6 +807,8 @@ async function setZoom(v, zoom, sx, sy) {
 function go(v, delta) {
   const target = v.index + delta;
   if (target < 0 || target >= v.pages.length) return;
+  commitText(v);
+  cancelDrawing(v);
   saveView(v);
   v.index = target;
   showPage(v);
@@ -479,7 +817,7 @@ function go(v, delta) {
 function bindControls(v) {
   const root = v.root;
   const stage = $(".viewer-stage", root);
-  const canvas = $(".viewer-canvas", root);
+  const sheet = $(".viewer-sheet", root);
 
   $(".viewer-close", root).addEventListener("click", () => closeViewer());
   $(".viewer-nav.prev", root).addEventListener("click", () => go(v, -1));
@@ -507,6 +845,9 @@ function bindControls(v) {
   });
 
   v.onKey = (e) => {
+    if (e.target?.closest?.("input, textarea")) return; // Text wird gerade eingegeben
+    if (e.key === "Escape" && v.editing) { setEditing(v, false); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && v.editing) { e.preventDefault(); undoMark(v); return; }
     if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); go(v, 1); }
     else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); go(v, -1); }
     else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && v.zoom <= 1.01) { e.preventDefault(); go(v, e.key === "ArrowDown" ? 1 : -1); }
@@ -549,9 +890,9 @@ function bindControls(v) {
     const s = stage.getBoundingClientRect();
     setZoom(v, v.zoom > 1.01 ? 1 : 2.5, clientX - s.left, clientY - s.top);
   };
-  stage.addEventListener("dblclick", (e) => { e.preventDefault(); doubleTap(e.clientX, e.clientY); });
+  stage.addEventListener("dblclick", (e) => { e.preventDefault(); if (!v.editing) doubleTap(e.clientX, e.clientY); });
 
-  // Touch: Wischen (nur ohne Zoom), Zwei-Finger-Zoom, Doppeltipp
+  // Touch: Wischen (nur ohne Zoom), Zwei-Finger-Zoom und -Verschieben, Doppeltipp
   let t0 = null;      // Start eines Ein-Finger-Tipps/Wischens
   let pinch = null;   // laufender Zwei-Finger-Zoom
   let lastTap = 0;
@@ -563,11 +904,12 @@ function bindControls(v) {
       const s = stage.getBoundingClientRect();
       const mx = (a.clientX + b.clientX) / 2 - s.left;
       const my = (a.clientY + b.clientY) / 2 - s.top;
-      const r = canvas.getBoundingClientRect();
-      pinch = { d0: dist(a, b), zoom0: v.zoom, ratio: 1, mx, my, anchor: contentPoint(v, mx, my),
+      const r = sheet.getBoundingClientRect();
+      pinch = { d0: dist(a, b), zoom0: v.zoom, ratio: 1, mx, my, tx: 0, ty: 0, anchor: contentPoint(v, mx, my),
         ox: (a.clientX + b.clientX) / 2 - r.left, oy: (a.clientY + b.clientY) / 2 - r.top };
-      canvas.style.transformOrigin = `${pinch.ox}px ${pinch.oy}px`;
+      sheet.style.transformOrigin = `${pinch.ox}px ${pinch.oy}px`;
       t0 = null;
+      cancelDrawing(v); // zweiter Finger: das ist Zoomen, kein Zeichnen
       e.preventDefault();
     } else if (e.touches.length === 1 && !pinch) {
       // Scroll-Position merken: stand der Ausschnitt schon am Rand, darf ein Wischen auch im Zoom umblättern
@@ -581,7 +923,11 @@ function bindControls(v) {
       const [a, b] = e.touches;
       const target = clamp(pinch.zoom0 * (dist(a, b) / pinch.d0));
       pinch.ratio = target / pinch.zoom0;
-      canvas.style.transform = `scale(${pinch.ratio})`; // Vorschau, scharf gezeichnet wird beim Loslassen
+      const s = stage.getBoundingClientRect();
+      pinch.tx = (a.clientX + b.clientX) / 2 - s.left - pinch.mx;
+      pinch.ty = (a.clientY + b.clientY) / 2 - s.top - pinch.my;
+      // Vorschau, scharf gezeichnet wird beim Loslassen
+      sheet.style.transform = `translate(${pinch.tx}px, ${pinch.ty}px) scale(${pinch.ratio})`;
     }
   }, { passive: false });
 
@@ -591,12 +937,19 @@ function bindControls(v) {
         const p = pinch;
         pinch = null;
         const z = clamp(p.zoom0 * p.ratio);
-        if (Math.abs(z - v.zoom) < 0.01) { canvas.style.transform = ""; return; }
+        if (Math.abs(z - v.zoom) < 0.01) {
+          // nur verschoben
+          sheet.style.transform = "";
+          stage.scrollLeft -= p.tx;
+          stage.scrollTop -= p.ty;
+          return;
+        }
         v.zoom = z;
-        render(v, { anchor: p.anchor }).then(() => saveView(v));
+        render(v, { anchor: { ...p.anchor, px: p.mx + p.tx, py: p.my + p.ty } }).then(() => saveView(v));
       }
       return;
     }
+    if (v.editing) { t0 = null; return; } // im Markier-Modus nicht blättern
     if (!t0 || e.changedTouches.length !== 1) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - t0.x, dy = t.clientY - t0.y;

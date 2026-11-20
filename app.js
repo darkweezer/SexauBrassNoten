@@ -10,10 +10,11 @@ import {
 } from "./drive.js";
 import { INSTRUMENT_ORDER, SONSTIGE, findInstruments, isCollectionTitle } from "./instruments.js";
 import { openViewer, renderPdfStrip } from "./viewer.js";
+import { createMarks } from "./marks.js";
 import { labelVariants, parseVoice } from "./labels.js";
 import { initPrint, renderPrint } from "./print.js";
 
-const APP_VERSION = "38"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
+const APP_VERSION = "39"; // bei jeder Änderung zusammen mit sw.js und styles.css (--css-version) erhöhen
 const DB_NAME = "notenarchiv";
 const DB_VERSION = 1;
 const STORE_PDFS = "pdfs";      // key: fileId, value: { id, songId, voice, title, blob, savedAt }
@@ -306,6 +307,15 @@ async function checkAdmin() {
     if (state.email) lsSet(LS_USER, state.email); // für Zoom-Einstellungen auch ohne Internet
   } catch { state.email = ""; }
   updateAdminAccess();
+  if (state.email) getMarks().sync(); // Markierungen von anderen Geräten holen (nur wenn Drive-Abgleich erlaubt)
+}
+
+// Persönliche Markierungen (marks.js): im Gerät und, wenn erlaubt, als Datei im eigenen Drive
+let marksStore = null;
+function getMarks() {
+  const user = (state.email || lsGet(LS_USER) || "gast").toLowerCase();
+  if (!marksStore || marksStore.user !== user) marksStore = Object.assign(createMarks(user), { user });
+  return marksStore;
 }
 
 // @googlemail.com und @gmail.com sind dasselbe Konto
@@ -1323,6 +1333,7 @@ function openFile(fileId) {
     zoomDefaults: () => state.zoomStandard,
     canSaveZoom: () => state.isAdmin,
     onSaveZoom: saveZoomStandard,
+    marks: getMarks(),
   }).catch(handleError);
 }
 

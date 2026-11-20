@@ -338,3 +338,45 @@ export function buildSongs(folders, pdfs) {
     })
     .filter((song) => song.files.length > 0);
 }
+
+// ---------- Persönliche Markierungen (Datei im eigenen Drive der Person) ----------
+// Die Datei „NotenApp-Markierungen.json“ liegt in „Meine Ablage“ der angemeldeten Person, nicht im Noten-Ordner.
+// Angelegt und geändert wird sie mit der Berechtigung drive.file (nur Dateien, die diese App selbst angelegt hat).
+// Erkannt wird sie an einer unsichtbaren Kennung, also auch, wenn sie umbenannt oder verschoben wurde.
+
+const MARKS_FILE_NAME = "NotenApp-Markierungen.json";
+
+export async function loadMarksFile() {
+  const files = await listAll(
+    "appProperties has { key='notenapp' and value='markierungen' } and 'me' in owners and trashed = false",
+    "id, modifiedTime",
+  );
+  if (!files.length) return null;
+  files.sort((a, b) => String(b.modifiedTime).localeCompare(String(a.modifiedTime)));
+  const res = await driveFetch(`${API}/${files[0].id}?alt=media`);
+  const data = await res.json().catch(() => ({}));
+  return { fileId: files[0].id, data: data && typeof data === "object" ? data : {} };
+}
+
+export async function saveMarksFile(fileId, data) {
+  const body = JSON.stringify(data);
+  if (fileId) {
+    const res = await driveFetch(`${UPLOAD}/${fileId}?uploadType=media&fields=id`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body,
+    });
+    return (await res.json()).id;
+  }
+  const boundary = "notenapp" + Date.now();
+  const meta = JSON.stringify({
+    name: MARKS_FILE_NAME, mimeType: "application/json",
+    description: "Persönliche Markierungen aus der NotenApp (Sexau Brass). Bitte nicht löschen.",
+    appProperties: { notenapp: "markierungen" },
+  });
+  const multipart =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+  const res = await driveFetch(`${UPLOAD}?uploadType=multipart&fields=id`, {
+    method: "POST", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body: multipart,
+  });
+  return (await res.json()).id;
+}
